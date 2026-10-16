@@ -4,11 +4,11 @@ import "testing"
 
 func TestResolveEmptyKeepsEverything(t *testing.T) {
 	got := Resolve(KindWebpage, "")
-	if !got.All || !got.HTML || !got.Text || !got.Screenshot || !got.MHTML || !got.Metadata || got.Audio {
+	if !got.All || !got.HTML || !got.Text || !got.Screenshot || !got.MHTML || !got.Metadata || !got.Words || got.Audio {
 		t.Fatalf("webpage default = %+v", got)
 	}
 	pod := Resolve(KindPodcast, "")
-	if !pod.Audio || !pod.Metadata || pod.HTML {
+	if !pod.Audio || !pod.Metadata || pod.HTML || pod.Words {
 		t.Fatalf("podcast default = %+v", pod)
 	}
 }

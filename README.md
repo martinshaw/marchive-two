@@ -2,7 +2,7 @@
 
 Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, or the text of a page. One Go binary runs the scheduler, the capture jobs, and the UI.
 
-Version 0.2.1.
+Version 0.2.2.
 
 ## Contents
 
@@ -72,8 +72,8 @@ The window follows a desktop layout: a menu bar, a toolbar, a sidebar, and table
 
 Each source has a kind and a schedule.
 
-- **Webpage.** HTML, readable text, metadata, a full-page screenshot, and MHTML. A new folder is written only when the text changes.
-- **Article index.** New same-site articles from a section or homepage. An optional CSS selector picks the links.
+- **Webpage.** HTML, readable text, metadata, a full-page screenshot, MHTML, and `words.json`. A new folder is written only when the text changes.
+- **Article index.** New same-site articles from a section or homepage. An optional CSS selector picks the links. Each article can keep the same page files, including `words.json`.
 - **Podcast.** New episodes, identified by the RSS GUID, then the enclosure URL. Each episode can keep the audio file and `metadata.json`.
 - **Text extract.** Readable text and metadata when the page changes.
 

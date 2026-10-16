@@ -18,6 +18,7 @@ type saveMode struct {
 	Screenshot bool
 	MHTML      bool
 	Metadata   bool
+	Words      bool
 }
 
 func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL string, mode saveMode) (store.Item, error) {
@@ -91,6 +92,16 @@ func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL st
 			return store.Item{}, err
 		}
 		if err := os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644); err != nil {
+			return store.Item{}, err
+		}
+	}
+	if mode.Words && (kind == "snapshot" || kind == "article") {
+		index := BuildWordIndex(meta.Title, BodyText(doc.HTML, doc.URL))
+		raw, err := json.MarshalIndent(index, "", "  ")
+		if err != nil {
+			return store.Item{}, err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "words.json"), append(raw, '\n'), 0o644); err != nil {
 			return store.Item{}, err
 		}
 	}

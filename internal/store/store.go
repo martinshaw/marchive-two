@@ -500,6 +500,22 @@ func (s *Store) CreateRun(scheduleID int64) (Run, error) {
 	return s.GetRun(id)
 }
 
+func (s *Store) GetRunDetail(id int64) (RunDetail, error) {
+	row := s.db.QueryRow(`
+		SELECT runs.id, runs.schedule_id, runs.status, runs.error, runs.note,
+		       runs.started_at, runs.finished_at, runs.created_at,
+		       sources.id, sources.name, sources.url, sources.provider
+		FROM runs
+		JOIN schedules ON schedules.id = runs.schedule_id
+		JOIN sources ON sources.id = schedules.source_id
+		WHERE runs.id = ?`, id)
+	detail, err := scanRunDetail(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RunDetail{}, ErrNotFound
+	}
+	return detail, err
+}
+
 func (s *Store) GetRun(id int64) (Run, error) {
 	row := s.db.QueryRow(`
 		SELECT id, schedule_id, status, error, note, started_at, finished_at, created_at
@@ -712,6 +728,56 @@ func (s *Store) LatestContentHash(sourceID int64, kind string) (string, bool, er
 		return "", false, err
 	}
 	return hash, true, nil
+}
+
+func (s *Store) GetItem(id int64) (Item, error) {
+	row := s.db.QueryRow(`
+		SELECT id, source_id, run_id, identity_key, kind, title, url, status, error,
+		       download_location, content_hash, retry_count, created_at, updated_at
+		FROM items WHERE id = ?`, id)
+	item, err := scanItem(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, ErrNotFound
+	}
+	return item, err
+}
+
+// WordItem is an archived item that may have a words.json file, with the capture it belongs to.
+type WordItem struct {
+	ID               int64
+	RunID            int64
+	Title            string
+	DownloadLocation string
+	RunAt            time.Time
+	SourceName       string
+	Provider         string
+}
+
+func (s *Store) ListWordItems() ([]WordItem, error) {
+	rows, err := s.db.Query(`
+		SELECT items.id, items.run_id, items.title, items.download_location,
+		       runs.created_at, sources.name, sources.provider
+		FROM items
+		JOIN runs ON runs.id = items.run_id
+		JOIN schedules ON schedules.id = runs.schedule_id
+		JOIN sources ON sources.id = schedules.source_id
+		WHERE items.download_location != ''
+		ORDER BY runs.created_at, runs.id, items.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WordItem
+	for rows.Next() {
+		var item WordItem
+		var created string
+		if err := rows.Scan(&item.ID, &item.RunID, &item.Title, &item.DownloadLocation, &created, &item.SourceName, &item.Provider); err != nil {
+			return nil, err
+		}
+		item.RunAt = mustTime(created)
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) ListItemsByRunIDs(ids []int64) ([]Item, error) {

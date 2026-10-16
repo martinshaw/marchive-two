@@ -14,6 +14,7 @@ type Capture struct {
 	Screenshot bool `json:"screenshot,omitempty"`
 	MHTML      bool `json:"mhtml,omitempty"`
 	Metadata   bool `json:"metadata,omitempty"`
+	Words      bool `json:"words,omitempty"`
 	Audio      bool `json:"audio,omitempty"`
 }
 
@@ -24,6 +25,7 @@ func (c Capture) mode() saveMode {
 		Screenshot: c.Screenshot,
 		MHTML:      c.MHTML,
 		Metadata:   c.Metadata,
+		Words:      c.Words,
 	}
 }
 
@@ -111,7 +113,7 @@ func onlyKind(kind string, stored Capture) Capture {
 func partKeys(kind string) []string {
 	switch kind {
 	case KindWebpage, KindArticles:
-		return []string{"html", "text", "screenshot", "mhtml", "metadata"}
+		return []string{"html", "text", "screenshot", "mhtml", "metadata", "words"}
 	case KindText:
 		return []string{"text", "metadata"}
 	case KindPodcast:
@@ -133,6 +135,8 @@ func setPart(c *Capture, key string, on bool) {
 		c.MHTML = on
 	case "metadata":
 		c.Metadata = on
+	case "words":
+		c.Words = on
 	case "audio":
 		c.Audio = on
 	}
@@ -150,6 +154,8 @@ func partOn(c Capture, key string) bool {
 		return c.MHTML
 	case "metadata":
 		return c.Metadata
+	case "words":
+		return c.Words
 	case "audio":
 		return c.Audio
 	default:

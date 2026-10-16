@@ -24,6 +24,8 @@
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M6 5.5h12M12 5.5V19M8.5 19h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
     <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4 8.5h16v8.2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 13h4.2a2 2 0 0 0 1.8 1.2h4a2 2 0 0 0 1.8-1.2H20" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
     <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.5 17.5h9.2a3.3 3.3 0 0 0 .4-6.6 4.6 4.6 0 0 0-8.8-1.2A3.2 3.2 0 0 0 7.5 17.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 7.5h16v10a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-10z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 8l7.5 6 7.5-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
   </svg>
 
   <header class="menubar">
@@ -64,6 +66,8 @@
         <div class="menu-pop" role="menu" hidden>
           <button type="button" role="menuitem" data-view="sources" data-filter="all" aria-keyshortcuts="Control+1">All Sources<span class="key">⌃1</span></button>
           <button type="button" role="menuitem" data-view="captures" data-filter="all" aria-keyshortcuts="Control+2">All Captures<span class="key">⌃2</span></button>
+          <button type="button" role="menuitem" data-view="words" data-filter="words">Words</button>
+          <button type="button" role="menuitem" data-view="reader" data-filter="reader">Reader</button>
           <div class="menu-sep"></div>
           <button type="button" role="menuitem" data-view="sources" data-filter="webpage">Webpages</button>
           <button type="button" role="menuitem" data-view="sources" data-filter="article_index">Articles</button>
@@ -181,6 +185,14 @@
           <span>Succeeded</span>
           <span class="count" data-count="succeeded"></span>
         </button>
+        <button type="button" class="side-item" data-view="words" data-filter="words">
+          <svg class="side-icon tone-words"><use href="#i-cloud"/></svg>
+          <span>Words</span>
+        </button>
+        <button type="button" class="side-item" data-view="reader" data-filter="reader">
+          <svg class="side-icon tone-mail"><use href="#i-mail"/></svg>
+          <span>Reader</span>
+        </button>
 
         <p class="side-label">Marchive</p>
         <button type="button" class="side-item" data-view="settings" data-filter="">
@@ -213,6 +225,38 @@
 
         <section class="pane" id="pane-captures" data-pane="captures">
           <div id="live" aria-live="polite">{{template "live" .}}</div>
+        </section>
+
+        <section class="pane" id="pane-reader" data-pane="reader">
+          <div class="reader">
+            <div class="reader-list" id="reader-list"></div>
+            <article class="message" id="reader-message">
+              <header class="message-head">
+                <h2 class="message-title" id="reader-message-title">Reader</h2>
+                <p class="message-meta" id="reader-message-meta"></p>
+              </header>
+              <div class="message-files" id="reader-message-files" hidden></div>
+              <div class="message-body" id="reader-message-body">
+                <p class="empty">Select an item to read its files.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="pane" id="pane-words" data-pane="words">
+          <div class="words-layout">
+            <div class="cloud-card">
+              <div class="split-label" id="timeline-label">All captures</div>
+              <div id="timeline-cloud" class="cloud" hidden></div>
+              <p class="empty cloud-empty" id="timeline-empty">No word index yet.</p>
+            </div>
+            <div class="chart-card">
+              <div class="split-label">Over time</div>
+              <div id="words-legend" class="words-legend" hidden></div>
+              <svg id="words-chart" class="words-chart" hidden role="img" aria-label="Word frequencies over captures"></svg>
+              <p class="empty cloud-empty" id="words-chart-empty">Word frequencies appear here after a capture saves a word index.</p>
+            </div>
+          </div>
         </section>
 
         <section class="pane" id="pane-settings" data-pane="settings">
@@ -455,6 +499,7 @@
     <label class="check" data-part="screenshot" data-kinds="webpage article_index"><input type="checkbox" name="capture" value="screenshot" checked> Screenshot</label>
     <label class="check" data-part="mhtml" data-kinds="webpage article_index"><input type="checkbox" name="capture" value="mhtml" checked> Page archive</label>
     <label class="check" data-part="audio" data-kinds="podcast"><input type="checkbox" name="capture" value="audio" checked> Episode audio</label>
+    <label class="check" data-part="words" data-kinds="webpage article_index"><input type="checkbox" name="capture" value="words" checked> Word index</label>
     <label class="check" data-part="metadata" data-kinds="webpage article_index text_extract"><input type="checkbox" name="capture" value="metadata" checked> Metadata</label>
     <label class="check" data-part="metadata" data-kinds="podcast"><input type="checkbox" name="capture" value="metadata" checked> Episode details</label>
   </div>
