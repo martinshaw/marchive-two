@@ -1,3 +1,15 @@
+{{define "pill"}}
+<span class="pill {{.Status}}{{if .Busy}} is-busy{{end}}" style="--progress: {{.Percent}}%" role="progressbar" aria-valuemin="0" aria-valuemax="100" {{if not .Busy}}aria-valuenow="{{.Percent}}"{{end}} aria-label="{{.Status}}">
+  <span class="pill-fill"></span>
+  <span class="pill-label">{{.Status}}</span>
+</span>
+{{end}}
+
+{{define "library"}}
+<div id="library-sources"><table><tbody>{{template "sourceRows" .}}</tbody></table></div>
+{{template "live" .}}
+{{end}}
+
 {{define "live"}}
 <div id="pulse" hidden data-runner="{{if .RunnerEnabled}}on{{else}}off{{end}}" data-signing="{{if .SigningIn}}1{{else}}0{{end}}" data-busy="{{if .BrowserBusy}}1{{else}}0{{end}}"></div>
 <div class="split-label">Captures</div>
@@ -16,7 +28,7 @@
     <tbody>
       {{range .Runs}}
       <tr data-run="{{.ID}}" data-status="{{.Status}}" data-source="{{.SourceID}}">
-        <td><span class="pill {{.Status}}">{{.Status}}</span></td>
+        <td>{{template "pill" (runMeter .Status .Items)}}</td>
         <td class="name">
           <span class="primary">{{if .SourceName}}{{.SourceName}}{{else}}Source {{.SourceID}}{{end}}</span>
           {{if or (eq .Status "queued") (eq .Status "running")}}
@@ -24,9 +36,9 @@
           {{end}}
         </td>
         <td>{{kind .Provider}}</td>
-        <td>{{stamp .CreatedAt}}</td>
+        <td data-sort="{{unix .CreatedAt}}">{{stamp .CreatedAt}}</td>
         <td class="clip">{{if .Error}}<span class="fault">{{.Error}}</span>{{else}}{{.Note}}{{end}}</td>
-        <td class="num">{{len .Items}}</td>
+        <td class="num" data-sort="{{len .Items}}">{{len .Items}}</td>
       </tr>
       {{end}}
     </tbody>
@@ -50,7 +62,7 @@
       {{$run := .}}
       {{range .Items}}
       <tr data-item="{{.ID}}" data-run="{{$run.ID}}" data-status="{{.Status}}" hidden>
-        <td><span class="pill {{.Status}}">{{.Status}}</span></td>
+        <td>{{template "pill" (itemMeter .Status)}}</td>
         <td class="name">
           <span class="primary">{{if .Title}}{{.Title}}{{else}}Untitled{{end}}</span>
           {{if .DownloadLocation}}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,7 +144,7 @@ func Open(path string) (*Store, error) {
 }
 
 func dsn(path string) string {
-	return "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
+	return "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-20000)&_pragma=temp_store(MEMORY)"
 }
 
 // Close closes the database.
@@ -822,6 +823,27 @@ func (s *Store) SetPodcastConcurrency(n int) error {
 		n = 6
 	}
 	return s.SetSetting("podcast_concurrency", fmt.Sprintf("%d", n))
+}
+
+// ListenPort is the UI port to bind. Zero means the operating system picks one.
+func (s *Store) ListenPort() (int, error) {
+	v, err := s.GetSetting("listen_port", "0")
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 || n > 65535 {
+		return 0, nil
+	}
+	return n, nil
+}
+
+// SetListenPort stores the UI port. Zero asks for a random port on the next start.
+func (s *Store) SetListenPort(n int) error {
+	if n < 0 || n > 65535 {
+		return fmt.Errorf("port %d is outside 0 to 65535", n)
+	}
+	return s.SetSetting("listen_port", strconv.Itoa(n))
 }
 
 func (s *Store) BrowserConcurrency() (int, error) {

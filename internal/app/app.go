@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -56,12 +57,25 @@ func Serve(ctx context.Context, opts Options) error {
 	reg := provider.DefaultRegistry()
 	runr := runner.New(st, reg, br)
 	svc := service.New(st, runr, br)
+	svc.DataDir = opts.DataDir
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	configured, err := st.ListenPort()
 	if err != nil {
 		return err
 	}
+	addr := "127.0.0.1:0"
+	if configured != 0 {
+		addr = "127.0.0.1:" + strconv.Itoa(configured)
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		if configured != 0 {
+			return fmt.Errorf("could not listen on port %d: %w", configured, err)
+		}
+		return err
+	}
 	port := ln.Addr().(*net.TCPAddr).Port
+	svc.ActivePort = port
 	if err := os.WriteFile(paths.Port(opts.DataDir), []byte(strconv.Itoa(port)), 0o644); err != nil {
 		ln.Close()
 		return err

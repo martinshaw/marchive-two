@@ -22,6 +22,20 @@ import (
 //go:embed templates static
 var assets embed.FS
 
+func templateTime(v any) (time.Time, bool) {
+	switch x := v.(type) {
+	case time.Time:
+		return x, true
+	case *time.Time:
+		if x == nil {
+			return time.Time{}, false
+		}
+		return *x, true
+	default:
+		return time.Time{}, false
+	}
+}
+
 // New returns the localhost handler.
 func New(svc *service.Service) http.Handler {
 	static, err := fs.Sub(assets, "static")
@@ -40,29 +54,28 @@ func New(svc *service.Service) http.Handler {
 				return strconv.Itoa(n) + " " + unit
 			},
 			"stamp": func(v any) string {
-				var t time.Time
-				switch x := v.(type) {
-				case time.Time:
-					t = x
-				case *time.Time:
-					if x == nil {
-						return ""
-					}
-					t = *x
-				default:
-					return ""
-				}
-				if t.IsZero() {
+				t, ok := templateTime(v)
+				if !ok || t.IsZero() {
 					return ""
 				}
 				return t.Local().Format("2 Jan 2006 15:04")
 			},
+			"unix": func(v any) string {
+				t, ok := templateTime(v)
+				if !ok || t.IsZero() {
+					return ""
+				}
+				return strconv.FormatInt(t.Unix(), 10)
+			},
+			"itemMeter": itemMeter,
+			"runMeter":  runMeter,
 		}).ParseFS(assets, "templates/*.html")),
 	}
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	mux.HandleFunc("GET /{$}", h.page)
 	mux.HandleFunc("GET /fragment/live", h.live)
+	mux.HandleFunc("GET /fragment/library", h.library)
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/state", h.state)
 	mux.HandleFunc("POST /api/sources", h.createSource)
@@ -107,13 +120,21 @@ func (h *handler) page(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) live(w http.ResponseWriter, r *http.Request) {
+	h.fragment(w, r, "live")
+}
+
+func (h *handler) library(w http.ResponseWriter, r *http.Request) {
+	h.fragment(w, r, "library")
+}
+
+func (h *handler) fragment(w http.ResponseWriter, r *http.Request, name string) {
 	state, err := h.svc.State()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	h.render(w, "live", state)
+	h.render(w, name, state)
 }
 
 func (h *handler) render(w http.ResponseWriter, name string, data any) {
@@ -145,7 +166,7 @@ func (h *handler) createSource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if err := r.ParseForm(); err != nil {
+		if err := parseRequestForm(r); err != nil {
 			h.fail(w, r, &service.Error{Status: 400, Msg: "invalid form"})
 			return
 		}
@@ -182,7 +203,7 @@ func (h *handler) createSource(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	if wantsJSON(r) {
+	if answersJSON(r) {
 		writeJSON(w, http.StatusCreated, map[string]int64{"id": id, "scheduleId": scheduleID})
 		return
 	}
@@ -215,7 +236,7 @@ func (h *handler) updateSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if err := r.ParseForm(); err != nil {
+		if err := parseRequestForm(r); err != nil {
 			h.fail(w, r, &service.Error{Status: 400, Msg: "invalid form"})
 			return
 		}
@@ -290,7 +311,7 @@ func (h *handler) setRunner(w http.ResponseWriter, r *http.Request) {
 		}
 		enabled = body.Enabled
 	} else {
-		if err := r.ParseForm(); err != nil {
+		if err := parseRequestForm(r); err != nil {
 			h.fail(w, r, &service.Error{Status: 400, Msg: "invalid form"})
 			return
 		}
@@ -324,7 +345,7 @@ func (h *handler) settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if err := r.ParseForm(); err != nil {
+		if err := parseRequestForm(r); err != nil {
 			h.fail(w, r, &service.Error{Status: 400, Msg: "invalid form"})
 			return
 		}
@@ -334,6 +355,22 @@ func (h *handler) settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.PodcastConcurrency = &n
+		switch r.FormValue("port_mode") {
+		case "fixed":
+			port, err := strconv.Atoi(strings.TrimSpace(r.FormValue("listen_port")))
+			if err != nil {
+				h.fail(w, r, &service.Error{Status: 400, Msg: "choose a port from 1 to 65535"})
+				return
+			}
+			in.ListenPort = &port
+		case "random":
+			zero := 0
+			in.ListenPort = &zero
+		}
+		open := formBool(r, "open_on_login")
+		restart := formBool(r, "restart_on_crash")
+		in.OpenOnLogin = &open
+		in.RestartOnCrash = &restart
 	}
 	if err := h.svc.UpdateSettings(in); err != nil {
 		h.fail(w, r, err)
@@ -347,7 +384,7 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	if wantsJSON(r) {
+	if answersJSON(r) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "opening Chrome"})
 		return
 	}
@@ -383,7 +420,7 @@ func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {
 		}
 		target = body.Path
 	} else {
-		if err := r.ParseForm(); err != nil {
+		if err := parseRequestForm(r); err != nil {
 			h.fail(w, r, &service.Error{Status: 400, Msg: "invalid form"})
 			return
 		}
@@ -397,7 +434,7 @@ func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) done(w http.ResponseWriter, r *http.Request, body any) {
-	if wantsJSON(r) {
+	if answersJSON(r) {
 		writeJSON(w, http.StatusOK, body)
 		return
 	}
@@ -415,15 +452,35 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		status = http.StatusInternalServerError
 	}
-	if wantsJSON(r) {
+	if answersJSON(r) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 }
 
+func parseRequestForm(r *http.Request) error {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		return r.ParseMultipartForm(8 << 20)
+	}
+	return r.ParseForm()
+}
+
 func wantsJSON(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, "/api/") || strings.Contains(r.Header.Get("Content-Type"), "application/json")
+}
+
+func answersJSON(r *http.Request) bool {
+	return wantsJSON(r) || strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+func formBool(r *http.Request, key string) bool {
+	vals := r.Form[key]
+	if len(vals) == 0 {
+		return false
+	}
+	last := vals[len(vals)-1]
+	return last == "1" || last == "true" || last == "on"
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

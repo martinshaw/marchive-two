@@ -140,6 +140,24 @@ func TestFailInterruptedAndSettings(t *testing.T) {
 	}
 	n, err := st.PodcastConcurrency()
 	if err != nil || n != 6 {
+		t.Fatalf("podcast concurrency = %d %v", n, err)
+	}
+	gotPort, err := st.ListenPort()
+	if err != nil || gotPort != 0 {
+		t.Fatalf("default port = %d %v", gotPort, err)
+	}
+	if err := st.SetListenPort(8080); err != nil {
+		t.Fatal(err)
+	}
+	gotPort, err = st.ListenPort()
+	if err != nil || gotPort != 8080 {
+		t.Fatalf("port = %d %v", gotPort, err)
+	}
+	if err := st.SetListenPort(0); err != nil {
+		t.Fatal(err)
+	}
+	n, err = st.PodcastConcurrency()
+	if err != nil || n != 6 {
 		t.Fatalf("concurrency = %d %v", n, err)
 	}
 }

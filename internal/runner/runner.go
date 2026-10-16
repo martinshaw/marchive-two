@@ -160,8 +160,10 @@ func (r *Runner) loop(ctx context.Context) {
 		delay := 24 * time.Hour
 		if enabled {
 			if wait, ok := r.store.NextWake(time.Now()); ok {
-				if wait < time.Millisecond {
-					wait = time.Millisecond
+				// An overdue schedule that could not be queued must not spin the loop.
+				// A finished capture kicks the scheduler immediately.
+				if wait <= 0 {
+					wait = 2 * time.Second
 				}
 				delay = wait
 			}

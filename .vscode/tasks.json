@@ -1,0 +1,95 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "build",
+        "-trimpath",
+        "-ldflags",
+        "-s -w",
+        "-o",
+        "marchive",
+        "./cmd/marchive"
+      ],
+      "windows": {
+        "args": [
+          "build",
+          "-trimpath",
+          "-ldflags",
+          "-s -w",
+          "-o",
+          "marchive.exe",
+          "./cmd/marchive"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "CGO_ENABLED": "0"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "go",
+      "args": ["test", "./..."],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "CGO_ENABLED": "0"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Run",
+      "type": "shell",
+      "command": "./marchive",
+      "windows": {
+        "command": ".\\marchive.exe"
+      },
+      "dependsOn": ["Build"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Serve",
+      "type": "shell",
+      "command": "./marchive",
+      "args": ["serve"],
+      "windows": {
+        "command": ".\\marchive.exe"
+      },
+      "dependsOn": ["Build"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
