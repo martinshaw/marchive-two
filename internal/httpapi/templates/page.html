@@ -1,0 +1,413 @@
+{{define "page"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marchive</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body {{if not .ChromePath}}data-chrome-missing="1"{{end}}>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 19.2c1.4-3 3.6-4.4 6.5-4.4s5.1 1.4 6.5 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 8.5V17a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6l-1.6-1.8H5.5a2 2 0 0 0-2 2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7.5h14M9.5 7.5V5.8A1.3 1.3 0 0 1 10.8 4.5h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7M8 7.5l.7 11.2a1.5 1.5 0 0 0 1.5 1.3h3.6a1.5 1.5 0 0 0 1.5-1.3L16 7.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M14 5.5l4.5 4.5M4.5 19.5l1-4.2L15.2 5.6a1.6 1.6 0 0 1 2.2 0l1 1a1.6 1.6 0 0 1 0 2.2L8.7 18.5l-4.2 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4L18 18M18 6l-1.6 1.6M7.6 16.4L6 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 12h16M12 4c2.4 2.2 3.6 5 3.6 8s-1.2 5.8-3.6 8c-2.4-2.2-3.6-5-3.6-8s1.2-5.8 3.6-8z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-news" viewBox="0 0 24 24"><path d="M6 5.5h9.5A1.5 1.5 0 0 1 17 7v11.5H7.2A2.2 2.2 0 0 1 5 16.3V6.7A1.2 1.2 0 0 1 6.2 5.5H6zM17 9.5h2.2V17a1.5 1.5 0 0 1-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 9h6M8 12h6M8 15h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-podcast" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.2 16.5a6 6 0 0 1 9.6 0M5 18.8a9 9 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 13.2V20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M6 5.5h12M12 5.5V19M8.5 19h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4 8.5h16v8.2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 13h4.2a2 2 0 0 0 1.8 1.2h4a2 2 0 0 0 1.8-1.2H20" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/></symbol>
+  </svg>
+
+  <header class="menubar">
+    <nav class="menus" aria-label="Application">
+      <div class="menu">
+        <button type="button" class="menu-title app-title" aria-expanded="false" aria-haspopup="true">Marchive</button>
+        <div class="menu-pop" role="menu" hidden>
+          <button type="button" role="menuitem" data-action="about">About Marchive</button>
+          {{if not .ChromePath}}
+          <button type="button" role="menuitem" data-action="chrome-install">Install Google Chrome…</button>
+          {{end}}
+          <div class="menu-sep"></div>
+          <button type="button" role="menuitem" data-action="settings" aria-keyshortcuts="Control+,">Settings…<span class="key">⌃,</span></button>
+        </div>
+      </div>
+      <div class="menu">
+        <button type="button" class="menu-title" aria-expanded="false" aria-haspopup="true">File</button>
+        <div class="menu-pop" role="menu" hidden>
+          <button type="button" role="menuitem" data-action="add" aria-keyshortcuts="Control+N">New Source…<span class="key">⌃N</span></button>
+          <button type="button" role="menuitem" data-action="edit" aria-keyshortcuts="Control+E">Edit Schedule…<span class="key">⌃E</span></button>
+          <div class="menu-sep"></div>
+          <button type="button" role="menuitem" data-action="files" aria-keyshortcuts="Control+O">Show in Finder<span class="key">⌃O</span></button>
+          <button type="button" role="menuitem" data-action="remove">Remove…</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button type="button" class="menu-title" aria-expanded="false" aria-haspopup="true">Capture</button>
+        <div class="menu-pop" role="menu" hidden>
+          <button type="button" role="menuitem" data-action="run" aria-keyshortcuts="Control+R">Run Now<span class="key">⌃R</span></button>
+          <button type="button" role="menuitem" data-action="runner">{{if .RunnerEnabled}}Stop Runner{{else}}Start Runner{{end}}</button>
+          <button type="button" role="menuitem" data-action="cancel">Cancel Capture</button>
+          <div class="menu-sep"></div>
+          <button type="button" role="menuitem" data-action="signin">Sign In with Chrome</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button type="button" class="menu-title" aria-expanded="false" aria-haspopup="true">View</button>
+        <div class="menu-pop" role="menu" hidden>
+          <button type="button" role="menuitem" data-view="sources" data-filter="all" aria-keyshortcuts="Control+1">All Sources<span class="key">⌃1</span></button>
+          <button type="button" role="menuitem" data-view="captures" data-filter="all" aria-keyshortcuts="Control+2">All Captures<span class="key">⌃2</span></button>
+          <div class="menu-sep"></div>
+          <button type="button" role="menuitem" data-view="sources" data-filter="webpage">Webpages</button>
+          <button type="button" role="menuitem" data-view="sources" data-filter="article_index">Articles</button>
+          <button type="button" role="menuitem" data-view="sources" data-filter="podcast">Podcasts</button>
+          <button type="button" role="menuitem" data-view="sources" data-filter="text_extract">Text</button>
+        </div>
+      </div>
+    </nav>
+    <p class="menu-extra" id="menu-runner">{{if .RunnerEnabled}}Runner on{{else}}Runner off{{end}}</p>
+  </header>
+
+  <div class="app">
+    <div class="toolbar">
+      <div class="toolbar-title">
+        <h1 id="view-title">Sources</h1>
+        <p id="view-sub">Library</p>
+      </div>
+      <div class="tools" role="toolbar" aria-label="Actions">
+        <button type="button" class="tool" data-action="add">
+          <svg class="icon"><use href="#i-plus"/></svg>
+          <span>Add</span>
+        </button>
+        <button type="button" class="tool" data-action="run">
+          <svg class="icon"><use href="#i-play"/></svg>
+          <span>Run</span>
+        </button>
+        <form method="post" action="/runner" id="runner-form">
+          <button class="tool" name="enabled" id="tool-runner" value="{{if .RunnerEnabled}}false{{else}}true{{end}}">
+            <svg class="icon icon-start" {{if .RunnerEnabled}}hidden{{end}}><use href="#i-play"/></svg>
+            <svg class="icon icon-stop" {{if not .RunnerEnabled}}hidden{{end}}><use href="#i-stop"/></svg>
+            <span id="tool-runner-label">{{if .RunnerEnabled}}Stop{{else}}Start{{end}}</span>
+          </button>
+        </form>
+        <button type="button" class="tool" data-action="cancel">
+          <svg class="icon"><use href="#i-x"/></svg>
+          <span>Cancel</span>
+        </button>
+        <span class="tool-sep"></span>
+        <button type="button" class="tool" data-action="edit">
+          <svg class="icon"><use href="#i-pencil"/></svg>
+          <span>Edit</span>
+        </button>
+        <button type="button" class="tool" data-action="files">
+          <svg class="icon"><use href="#i-folder"/></svg>
+          <span>Files</span>
+        </button>
+        <button type="button" class="tool danger-tool" data-action="remove">
+          <svg class="icon"><use href="#i-trash"/></svg>
+          <span>Remove</span>
+        </button>
+        <span class="tool-sep"></span>
+        <form method="post" action="/browser/signin" id="signin-form">
+          <button class="tool" id="tool-signin" type="submit" {{if or .BrowserBusy .SigningIn}}disabled{{end}}>
+            <svg class="icon"><use href="#i-person"/></svg>
+            <span>Sign In</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {{if .Error}}<p class="banner" role="alert">{{.Error}}</p>{{end}}
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <p class="side-label">Library</p>
+        <button type="button" class="side-item is-selected" data-view="sources" data-filter="all">
+          <svg class="side-icon tone-library"><use href="#i-tray"/></svg>
+          <span>All Sources</span>
+          <span class="count" data-count="sources"></span>
+        </button>
+        <button type="button" class="side-item" data-view="captures" data-filter="all">
+          <svg class="side-icon tone-capture"><use href="#i-dot"/></svg>
+          <span>All Captures</span>
+          <span class="count" data-count="captures"></span>
+        </button>
+
+        <p class="side-label">Sources</p>
+        <button type="button" class="side-item" data-view="sources" data-filter="webpage">
+          <svg class="side-icon tone-web"><use href="#i-globe"/></svg>
+          <span>Webpages</span>
+          <span class="count" data-count="webpage"></span>
+        </button>
+        <button type="button" class="side-item" data-view="sources" data-filter="article_index">
+          <svg class="side-icon tone-news"><use href="#i-news"/></svg>
+          <span>Articles</span>
+          <span class="count" data-count="article_index"></span>
+        </button>
+        <button type="button" class="side-item" data-view="sources" data-filter="podcast">
+          <svg class="side-icon tone-podcast"><use href="#i-podcast"/></svg>
+          <span>Podcasts</span>
+          <span class="count" data-count="podcast"></span>
+        </button>
+        <button type="button" class="side-item" data-view="sources" data-filter="text_extract">
+          <svg class="side-icon tone-text"><use href="#i-text"/></svg>
+          <span>Text</span>
+          <span class="count" data-count="text_extract"></span>
+        </button>
+
+        <p class="side-label">Captures</p>
+        <button type="button" class="side-item" data-view="captures" data-filter="active">
+          <svg class="side-icon tone-active"><use href="#i-play"/></svg>
+          <span>In Progress</span>
+          <span class="count" data-count="active"></span>
+        </button>
+        <button type="button" class="side-item" data-view="captures" data-filter="failed">
+          <svg class="side-icon tone-failed"><use href="#i-x"/></svg>
+          <span>Failed</span>
+          <span class="count" data-count="failed"></span>
+        </button>
+        <button type="button" class="side-item" data-view="captures" data-filter="succeeded">
+          <svg class="side-icon tone-ok"><use href="#i-dot"/></svg>
+          <span>Succeeded</span>
+          <span class="count" data-count="succeeded"></span>
+        </button>
+
+        <p class="side-label">Marchive</p>
+        <button type="button" class="side-item" data-view="settings" data-filter="">
+          <svg class="side-icon tone-gear"><use href="#i-gear"/></svg>
+          <span>Settings</span>
+        </button>
+      </aside>
+
+      <main class="content">
+        <section class="pane is-on" id="pane-sources" data-pane="sources">
+          <div class="table-scroll">
+            <table class="grid" id="sources-table">
+              <thead>
+                <tr>
+                  <th class="col-name">Name</th>
+                  <th>Kind</th>
+                  <th>Address</th>
+                  <th>Every</th>
+                  <th>Next</th>
+                  <th class="num">New</th>
+                  <th>Folder</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Sources}}
+                {{$src := .}}
+                {{range .Schedules}}
+                <tr data-kind="{{$src.Provider}}" data-schedule="{{.ID}}" data-source="{{$src.ID}}" data-name="{{$src.Name}}" data-url="{{$src.URL}}" data-selector="{{$src.LinkSelector}}" data-capture="{{$src.Capture}}" data-every-count="{{.EveryCount}}" data-every-unit="{{.EveryUnit}}" data-max-new="{{.MaxNew}}" data-folder="{{.DownloadLocation}}" data-enabled="{{if .Enabled}}true{{else}}false{{end}}">
+                  <td class="name">
+                    <span class="primary">{{if $src.Name}}{{$src.Name}}{{else}}Untitled{{end}}</span>
+                    {{if $src.LinkSelector}}<span class="sub">{{$src.LinkSelector}}</span>{{end}}
+                    <div class="forms">
+                      <form id="run-{{.ID}}" method="post" action="/schedules/{{.ID}}/run"></form>
+                      <form id="open-{{.ID}}" method="post" action="/open"><input type="hidden" name="path" value="{{.DownloadLocation}}"></form>
+                      <form id="del-source-{{$src.ID}}-{{.ID}}" method="post" action="/sources/{{$src.ID}}/delete"></form>
+                      <form id="del-schedule-{{.ID}}" method="post" action="/schedules/{{.ID}}/delete"></form>
+                    </div>
+                  </td>
+                  <td>{{kind $src.Provider}}</td>
+                  <td class="clip"><a href="{{$src.URL}}">{{$src.URL}}</a></td>
+                  <td>{{every .EveryCount .EveryUnit}}</td>
+                  <td>{{stamp .NextRunAt}}</td>
+                  <td class="num">{{.MaxNew}}</td>
+                  <td class="clip path">{{.DownloadLocation}}</td>
+                  <td>{{if .Enabled}}On{{else}}Off{{end}}</td>
+                </tr>
+                {{end}}
+                {{end}}
+              </tbody>
+            </table>
+            <p class="empty" id="sources-empty" hidden>No sources in this section.</p>
+          </div>
+        </section>
+
+        <section class="pane" id="pane-captures" data-pane="captures">
+          <div id="live" aria-live="polite">{{template "live" .}}</div>
+        </section>
+
+        <section class="pane" id="pane-settings" data-pane="settings">
+          <div class="prefs">
+            <h2>Capture</h2>
+            <form method="post" action="/settings" class="pref-group">
+              <label class="pref-row">
+                <span>
+                  <strong>Podcast downloads at once</strong>
+                  <span class="sub">Episode files downloaded together inside one capture. From 1 to 6.</span>
+                </span>
+                <input name="podcast_concurrency" type="number" min="1" max="6" value="{{.PodcastConcurrency}}">
+              </label>
+              <label class="pref-row">
+                <span>
+                  <strong>Browser captures at once</strong>
+                  <span class="sub">Stays at one so captures can share the signed-in Chrome profile.</span>
+                </span>
+                <input name="browser_concurrency" type="number" value="1" readonly>
+              </label>
+              <div class="pref-actions">
+                <button type="submit" class="push">Save</button>
+              </div>
+            </form>
+
+            <h2>Chrome</h2>
+            <div class="pref-group prose">
+              {{if .ChromePath}}
+              <p>Chrome is available. Sign in with Marchive’s own profile, then quit Chrome. Captures keep what that signed-in window can already open.</p>
+              {{else}}
+              <p>{{.ChromeError}}</p>
+              <p><button type="button" class="push" data-action="chrome-install">Install Google Chrome</button></p>
+              {{end}}
+              {{if .SigningIn}}<p>Chrome is open. Sign in, then quit Chrome.</p>{{end}}
+              {{if and .BrowserBusy (not .SigningIn)}}<p>Chrome is capturing a page.</p>{{end}}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="statusbar">
+      <span id="status-detail">{{if .ChromePath}}Chrome ready{{else}}{{.ChromeError}}{{end}}</span>
+      <span id="status-selection">Nothing selected</span>
+      <span id="status-runner">{{if .RunnerEnabled}}Runner on{{else}}Runner off{{end}}</span>
+    </footer>
+
+    <div class="sheet-layer" id="sheet-layer" hidden>
+      <form class="sheet" id="sheet-add" method="post" action="/sources" hidden>
+        <header class="sheet-head"><h2>New Source</h2></header>
+        <div class="sheet-body">
+          <label>Name <input name="name" placeholder="Optional"></label>
+          <label>URL <input name="url" required placeholder="https://example.com"></label>
+          <label>Kind
+            <select name="provider" id="provider">
+              <option value="webpage">Webpage snapshot</option>
+              <option value="article_index">Article index</option>
+              <option value="podcast">Podcast feed</option>
+              <option value="text_extract">Text and metadata</option>
+            </select>
+          </label>
+          <label id="selector-field">Article link selector
+            <input name="link_selector" placeholder="main a">
+            <span class="hint">CSS selector for links on an index page. Leave empty to guess.</span>
+          </label>
+          <div class="sheet-row">
+            <label>Check every <input name="every_count" type="number" min="1" value="1" required></label>
+            <label>Unit
+              <select name="every_unit">
+                <option value="minutes">Minutes</option>
+                <option value="hours" selected>Hours</option>
+                <option value="seconds">Seconds</option>
+              </select>
+            </label>
+            <label>New items <input name="max_new" type="number" min="0" max="1000" value="20"></label>
+          </div>
+          <label>Archive folder <input name="download_location" required value="{{.DefaultFolder}}" placeholder="'Marchive' in home directory"></label>
+          {{template "captureFields"}}
+          <label class="check"><input type="checkbox" name="enabled" value="true" checked> Schedule enabled</label>
+        </div>
+        <footer class="sheet-foot">
+          <button type="button" data-sheet-close>Cancel</button>
+          <button type="submit" class="push">Add</button>
+        </footer>
+      </form>
+
+      <form class="sheet" id="sheet-edit" method="post" action="/schedules/0" hidden>
+        <header class="sheet-head"><h2>Edit Schedule</h2></header>
+        <div class="sheet-body">
+          <p class="sheet-source" id="edit-source"></p>
+          <div class="sheet-row">
+            <label>Every <input name="every_count" id="edit-every" type="number" min="1" required></label>
+            <label>Unit
+              <select name="every_unit" id="edit-unit">
+                <option value="seconds">Seconds</option>
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+              </select>
+            </label>
+            <label>New items <input name="max_new" id="edit-max" type="number" min="0" max="1000"></label>
+          </div>
+          <label>Archive folder <input name="download_location" id="edit-folder" required placeholder="'Marchive' in home directory"></label>
+          <input type="hidden" name="provider" id="edit-kind" value="webpage">
+          {{template "captureFields"}}
+          <label class="check"><input type="checkbox" name="enabled" id="edit-enabled" value="true"> Enabled</label>
+        </div>
+        <footer class="sheet-foot">
+          <button type="submit" class="danger-text" formaction="" id="edit-remove-schedule">Remove Schedule</button>
+          <span class="sheet-spacer"></span>
+          <button type="button" data-sheet-close>Cancel</button>
+          <button type="submit" class="push">Save</button>
+        </footer>
+      </form>
+
+      <form class="sheet" id="sheet-about" hidden>
+        <header class="sheet-head"><h2>About Marchive</h2></header>
+        <div class="sheet-body prose">
+          <p>Version {{version}}. A local archive of webpages, new articles, and podcast episodes.</p>
+          <p>Captures store the page Chrome can already open. Marchive does not try to defeat a paywall.</p>
+        </div>
+        <footer class="sheet-foot">
+          <span class="sheet-spacer"></span>
+          <button type="button" class="push" data-sheet-close>OK</button>
+        </footer>
+      </form>
+
+      <form class="sheet confirm" id="sheet-confirm" hidden>
+        <header class="sheet-head"><h2>Remove</h2></header>
+        <div class="sheet-body prose"><p id="confirm-text"></p></div>
+        <footer class="sheet-foot">
+          <span class="sheet-spacer"></span>
+          <button type="button" data-sheet-close>Cancel</button>
+          <button type="button" class="push danger-push" id="confirm-yes">Remove</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+  <div class="alert-layer" id="chrome-alert" hidden>
+    <div class="alert" role="dialog" aria-modal="true" aria-labelledby="chrome-alert-title">
+      <div class="alert-main">
+        <h2 id="chrome-alert-title">Google Chrome is required</h2>
+        <p id="chrome-alert-text">Webpage, article, and text captures use Google Chrome. Marchive can download the current stable version and install it.</p>
+        <div class="progress" id="chrome-progress" hidden>
+          <div class="progress-bar" id="chrome-progress-bar"></div>
+        </div>
+        <p class="progress-label" id="chrome-progress-label"></p>
+        <div class="alert-actions">
+          <button type="button" id="chrome-later">Not Now</button>
+          <button type="button" class="push" id="chrome-install">Install</button>
+          <button type="button" id="chrome-cancel" hidden>Cancel</button>
+          <button type="button" class="push" id="chrome-ok" hidden>OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}
+
+{{define "captureFields"}}
+<fieldset class="capture">
+  <legend>Capture</legend>
+  <label class="check"><input type="checkbox" name="capture_all" value="true" checked data-capture-all> All data</label>
+  <div class="capture-grid">
+    <label class="check" data-part="html" data-kinds="webpage"><input type="checkbox" name="capture" value="html" checked> Page HTML</label>
+    <label class="check" data-part="html" data-kinds="article_index"><input type="checkbox" name="capture" value="html" checked> Article HTML</label>
+    <label class="check" data-part="text" data-kinds="webpage article_index text_extract"><input type="checkbox" name="capture" value="text" checked> Readable text</label>
+    <label class="check" data-part="screenshot" data-kinds="webpage article_index"><input type="checkbox" name="capture" value="screenshot" checked> Screenshot</label>
+    <label class="check" data-part="mhtml" data-kinds="webpage article_index"><input type="checkbox" name="capture" value="mhtml" checked> Page archive</label>
+    <label class="check" data-part="audio" data-kinds="podcast"><input type="checkbox" name="capture" value="audio" checked> Episode audio</label>
+    <label class="check" data-part="metadata" data-kinds="webpage article_index text_extract"><input type="checkbox" name="capture" value="metadata" checked> Metadata</label>
+    <label class="check" data-part="metadata" data-kinds="podcast"><input type="checkbox" name="capture" value="metadata" checked> Episode details</label>
+  </div>
+</fieldset>
+{{end}}
