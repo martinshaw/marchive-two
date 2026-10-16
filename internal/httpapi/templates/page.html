@@ -1,0 +1,127 @@
+{{define "page"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marchive</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="mark">Marchive</p>
+      <p class="lede">A local archive of webpages, new articles, and podcast episodes.</p>
+    </div>
+    <p class="chrome">
+      {{if .ChromePath}}Chrome is available. Sign in with Marchive’s own profile, then quit Chrome. Captures only keep what that signed-in window can already open.{{else}}{{.ChromeError}}{{end}}
+    </p>
+  </header>
+
+  {{if .Error}}<p class="banner" role="alert">{{.Error}}</p>{{end}}
+
+  <div id="live" aria-live="polite">{{template "live" .}}</div>
+
+  <main>
+    <section class="card">
+      <h2>Add a source</h2>
+      <form method="post" action="/sources" class="stack">
+        <label>Name <input name="name" placeholder="Optional"></label>
+        <label>URL <input name="url" required placeholder="https://example.com"></label>
+        <label>Kind
+          <select name="provider" id="provider">
+            <option value="webpage">Webpage snapshot</option>
+            <option value="article_index">Article index</option>
+            <option value="podcast">Podcast feed</option>
+            <option value="text_extract">Text and metadata</option>
+          </select>
+        </label>
+	<label id="selector-field">Article link selector
+          <input name="link_selector" placeholder="main a">
+          <span class="hint">CSS selector for links on an index page. Leave empty to guess.</span>
+        </label>
+        <div class="row">
+          <label>Check every
+            <input name="every_count" type="number" min="1" value="1" required>
+          </label>
+          <label>Unit
+            <select name="every_unit">
+              <option value="minutes">Minutes</option>
+              <option value="hours" selected>Hours</option>
+              <option value="seconds">Seconds</option>
+            </select>
+          </label>
+          <label>New items per run
+            <input name="max_new" type="number" min="0" max="1000" value="20">
+          </label>
+        </div>
+        <label>Archive folder
+          <input name="download_location" required placeholder="/Users/you/Marchive">
+        </label>
+        <label class="check"><input type="checkbox" name="enabled" value="true" checked> Schedule enabled</label>
+        <button type="submit" class="primary">Add source</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Sources</h2>
+      {{if not .Sources}}<p class="empty">No sources yet.</p>{{end}}
+      {{range .Sources}}
+      <article class="card source">
+        <header>
+          <h3>{{if .Name}}{{.Name}}{{else}}Untitled{{end}}</h3>
+          <p class="meta">{{kind .Provider}} · <a href="{{.URL}}">{{.URL}}</a></p>
+          {{if .LinkSelector}}<p class="hint">Selector {{.LinkSelector}}</p>{{end}}
+        </header>
+        {{range .Schedules}}
+        <form method="post" action="/schedules/{{.ID}}" class="stack tight">
+          <div class="row">
+            <label>Every
+              <input name="every_count" type="number" min="1" value="{{.EveryCount}}" required>
+            </label>
+            <label>Unit
+              <select name="every_unit">
+                <option value="seconds" {{if eq .EveryUnit "seconds"}}selected{{end}}>Seconds</option>
+                <option value="minutes" {{if eq .EveryUnit "minutes"}}selected{{end}}>Minutes</option>
+                <option value="hours" {{if eq .EveryUnit "hours"}}selected{{end}}>Hours</option>
+              </select>
+            </label>
+            <label>New items
+              <input name="max_new" type="number" min="0" max="1000" value="{{.MaxNew}}">
+            </label>
+          </div>
+          <label>Folder <input name="download_location" value="{{.DownloadLocation}}" required></label>
+          <label class="check"><input type="checkbox" name="enabled" value="true" {{if .Enabled}}checked{{end}}> Enabled</label>
+          <div class="row actions">
+            <button type="submit">Save schedule</button>
+            <button type="submit" formaction="/schedules/{{.ID}}/run" formmethod="post">Run now</button>
+            <button type="submit" formaction="/open" formmethod="post" name="path" value="{{.DownloadLocation}}">Show files</button>
+            <button type="submit" class="danger" formaction="/schedules/{{.ID}}/delete" formmethod="post" onclick="return confirm('Remove this schedule? Files stay on disk.')">Remove schedule</button>
+          </div>
+        </form>
+        {{end}}
+        <form method="post" action="/sources/{{.ID}}/delete">
+          <button type="submit" class="danger" onclick="return confirm('Remove this source and its schedules? Files stay on disk.')">Remove source</button>
+        </form>
+      </article>
+      {{end}}
+    </section>
+
+    <section class="card">
+      <h2>Limits</h2>
+      <form method="post" action="/settings" class="row">
+        <label>Podcast downloads at once
+          <input name="podcast_concurrency" type="number" min="1" max="6" value="{{.PodcastConcurrency}}">
+        </label>
+        <label>Browser captures at once
+          <input name="browser_concurrency" type="number" value="1" readonly>
+        </label>
+        <button type="submit">Save limits</button>
+      </form>
+      <p class="hint">Browser captures stay at one so they can share the signed-in Chrome profile. Podcast downloads run inside that one capture.</p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,57 @@
+{{define "live"}}
+<section class="runner">
+  <div>
+    <p class="status {{if .RunnerEnabled}}on{{else}}off{{end}}">{{if .RunnerEnabled}}Runner on{{else}}Runner off{{end}}</p>
+    <p class="hint">Stopping the runner cancels queued captures. The one already running finishes unless you cancel it.</p>
+  </div>
+  <form method="post" action="/runner">
+    {{if .RunnerEnabled}}
+    <button name="enabled" value="false">Stop runner</button>
+    {{else}}
+    <button class="primary" name="enabled" value="true">Start runner</button>
+    {{end}}
+  </form>
+  <form method="post" action="/browser/signin">
+    <button type="submit" {{if or .BrowserBusy .SigningIn}}disabled{{end}}>Sign in with Chrome</button>
+  </form>
+  {{if .SigningIn}}<p class="hint">Chrome is open. Sign in, then quit Chrome.</p>{{end}}
+  {{if and .BrowserBusy (not .SigningIn)}}<p class="hint">Chrome is capturing a page.</p>{{end}}
+</section>
+
+<section>
+  <h2>Captures</h2>
+  {{if not .Runs}}<p class="empty">No captures yet. Start the runner or use Run now.</p>{{end}}
+  {{range .Runs}}
+  <article class="card run">
+    <header class="run-head">
+      <span class="chip {{.Status}}">{{.Status}}</span>
+      <strong>{{if .SourceName}}{{.SourceName}}{{else}}Source {{.SourceID}}{{end}}</strong>
+      <span class="meta">{{kind .Provider}}</span>
+      <span class="meta">{{stamp .CreatedAt}}</span>
+    </header>
+    {{if .Note}}<p>{{.Note}}</p>{{end}}
+    {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+    {{if or (eq .Status "queued") (eq .Status "running")}}
+    <form method="post" action="/runs/{{.ID}}/cancel"><button type="submit">Cancel</button></form>
+    {{end}}
+    {{if .Items}}
+    <ul class="items">
+      {{range .Items}}
+      <li>
+        <span class="chip {{.Status}}">{{.Status}}</span>
+        <span>{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</span>
+        {{if .Error}}<span class="error">{{.Error}}</span>{{end}}
+        {{if .DownloadLocation}}
+        <form method="post" action="/open">
+          <input type="hidden" name="path" value="{{.DownloadLocation}}">
+          <button type="submit">Show files</button>
+        </form>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+  </article>
+  {{end}}
+</section>
+{{end}}
