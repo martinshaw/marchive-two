@@ -101,6 +101,11 @@ func New(svc *service.Service) http.Handler {
 	mux.HandleFunc("POST /api/chrome/install/cancel", h.chromeCancel)
 	mux.HandleFunc("POST /api/open", h.openPath)
 	mux.HandleFunc("POST /open", h.openPath)
+	mux.HandleFunc("GET /api/items/{id}/files/{name}", h.itemFile)
+	mux.HandleFunc("GET /api/items/{id}/files", h.itemFiles)
+	mux.HandleFunc("GET /api/items/{id}/words", h.itemWords)
+	mux.HandleFunc("GET /api/runs/{id}/words", h.runWords)
+	mux.HandleFunc("GET /api/words", h.wordTimeline)
 	return guard(mux)
 }
 
@@ -406,6 +411,68 @@ func (h *handler) chromeInstall(w http.ResponseWriter, r *http.Request) {
 func (h *handler) chromeCancel(w http.ResponseWriter, r *http.Request) {
 	h.svc.CancelChromeInstall()
 	writeJSON(w, http.StatusOK, h.svc.ChromeInstall())
+}
+
+func (h *handler) itemFiles(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid id"})
+		return
+	}
+	msg, err := h.svc.ItemMessage(id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, msg)
+}
+
+func (h *handler) itemFile(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid id"})
+		return
+	}
+	path, err := h.svc.ItemFilePath(id, r.PathValue("name"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+
+func (h *handler) itemWords(w http.ResponseWriter, r *http.Request) {
+	h.wordCloud(w, r, h.svc.ItemWords)
+}
+
+func (h *handler) runWords(w http.ResponseWriter, r *http.Request) {
+	h.wordCloud(w, r, h.svc.RunWords)
+}
+
+func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(int64) (service.WordCloud, error)) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid id"})
+		return
+	}
+	cloud, err := load(id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cloud)
+}
+
+func (h *handler) wordTimeline(w http.ResponseWriter, r *http.Request) {
+	cloud, err := h.svc.WordTimeline()
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cloud)
 }
 
 func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {
