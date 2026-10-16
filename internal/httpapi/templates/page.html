@@ -122,9 +122,12 @@
           </button>
         </form>
       </div>
+      <label class="filter-field">
+        <input id="table-filter" type="search" placeholder="Filter" autocomplete="off" spellcheck="false" aria-label="Filter">
+      </label>
     </div>
 
-    {{if .Error}}<p class="banner" role="alert">{{.Error}}</p>{{end}}
+    <p class="banner" id="banner" role="alert" {{if not .Error}}hidden{{end}}>{{.Error}}</p>
 
     <div class="workspace">
       <aside class="sidebar">
@@ -202,32 +205,7 @@
                   <th>State</th>
                 </tr>
               </thead>
-              <tbody>
-                {{range .Sources}}
-                {{$src := .}}
-                {{range .Schedules}}
-                <tr data-kind="{{$src.Provider}}" data-schedule="{{.ID}}" data-source="{{$src.ID}}" data-name="{{$src.Name}}" data-url="{{$src.URL}}" data-selector="{{$src.LinkSelector}}" data-capture="{{$src.Capture}}" data-every-count="{{.EveryCount}}" data-every-unit="{{.EveryUnit}}" data-max-new="{{.MaxNew}}" data-folder="{{.DownloadLocation}}" data-enabled="{{if .Enabled}}true{{else}}false{{end}}">
-                  <td class="name">
-                    <span class="primary">{{if $src.Name}}{{$src.Name}}{{else}}Untitled{{end}}</span>
-                    {{if $src.LinkSelector}}<span class="sub">{{$src.LinkSelector}}</span>{{end}}
-                    <div class="forms">
-                      <form id="run-{{.ID}}" method="post" action="/schedules/{{.ID}}/run"></form>
-                      <form id="open-{{.ID}}" method="post" action="/open"><input type="hidden" name="path" value="{{.DownloadLocation}}"></form>
-                      <form id="del-source-{{$src.ID}}-{{.ID}}" method="post" action="/sources/{{$src.ID}}/delete"></form>
-                      <form id="del-schedule-{{.ID}}" method="post" action="/schedules/{{.ID}}/delete"></form>
-                    </div>
-                  </td>
-                  <td>{{kind $src.Provider}}</td>
-                  <td class="clip"><a href="{{$src.URL}}">{{$src.URL}}</a></td>
-                  <td>{{every .EveryCount .EveryUnit}}</td>
-                  <td>{{stamp .NextRunAt}}</td>
-                  <td class="num">{{.MaxNew}}</td>
-                  <td class="clip path">{{.DownloadLocation}}</td>
-                  <td>{{if .Enabled}}On{{else}}Off{{end}}</td>
-                </tr>
-                {{end}}
-                {{end}}
-              </tbody>
+              <tbody>{{template "sourceRows" .}}</tbody>
             </table>
             <p class="empty" id="sources-empty" hidden>No sources in this section.</p>
           </div>
@@ -240,7 +218,8 @@
         <section class="pane" id="pane-settings" data-pane="settings">
           <div class="prefs">
             <h2>Capture</h2>
-            <form method="post" action="/settings" class="pref-group">
+            <form method="post" action="/settings">
+            <div class="pref-group">
               <label class="pref-row">
                 <span>
                   <strong>Podcast downloads at once</strong>
@@ -255,9 +234,51 @@
                 </span>
                 <input name="browser_concurrency" type="number" value="1" readonly>
               </label>
+              <label class="pref-row">
+                <span>
+                  <strong>UI port</strong>
+                  <span class="sub">Random chooses a free localhost port whenever Marchive starts. A fixed port is used the next time it starts.{{if gt .ActivePort 0}} This session is using {{.ActivePort}}.{{end}}</span>
+                </span>
+                <select name="port_mode" id="port-mode">
+                  <option value="random" {{if eq .ListenPort 0}}selected{{end}}>Random</option>
+                  <option value="fixed" {{if gt .ListenPort 0}}selected{{end}}>Fixed</option>
+                </select>
+              </label>
+              <label class="pref-row" id="port-number-row" {{if eq .ListenPort 0}}hidden{{end}}>
+                <span>
+                  <strong>Port number</strong>
+                  <span class="sub">From 1 to 65535, on this computer only.</span>
+                </span>
+                <input name="listen_port" id="listen-port" type="number" min="1" max="65535" {{if gt .ListenPort 0}}value="{{.ListenPort}}" required{{else}}disabled{{end}}>
+              </label>
+            </div>
+
+            <h2>Startup</h2>
+            <div class="pref-group">
+              <label class="pref-row">
+                <span>
+                  <strong>Open on login</strong>
+                  <span class="sub">Starts Marchive when you sign in. macOS uses a LaunchAgent, Linux a systemd user service, and Windows a scheduled task.</span>
+                </span>
+                <span>
+                  <input type="hidden" name="open_on_login" value="0">
+                  <input type="checkbox" name="open_on_login" value="1" {{if .OpenOnLogin}}checked{{end}}>
+                </span>
+              </label>
+              <label class="pref-row">
+                <span>
+                  <strong>Restart on crash</strong>
+                  <span class="sub">That same service starts Marchive again if it crashes. It applies while the service is running Marchive.</span>
+                </span>
+                <span>
+                  <input type="hidden" name="restart_on_crash" value="0">
+                  <input type="checkbox" name="restart_on_crash" value="1" {{if .RestartOnCrash}}checked{{end}}>
+                </span>
+              </label>
               <div class="pref-actions">
                 <button type="submit" class="push">Save</button>
               </div>
+            </div>
             </form>
 
             <h2>Chrome</h2>
@@ -390,9 +411,37 @@
       </div>
     </div>
   </div>
+  <div id="cell-tip" class="cell-tip" hidden></div>
   <script src="/static/app.js"></script>
 </body>
 </html>
+{{end}}
+
+{{define "sourceRows"}}
+{{range .Sources}}
+{{$src := .}}
+{{range .Schedules}}
+<tr data-kind="{{$src.Provider}}" data-schedule="{{.ID}}" data-source="{{$src.ID}}" data-name="{{$src.Name}}" data-url="{{$src.URL}}" data-selector="{{$src.LinkSelector}}" data-capture="{{$src.Capture}}" data-every-count="{{.EveryCount}}" data-every-unit="{{.EveryUnit}}" data-max-new="{{.MaxNew}}" data-folder="{{.DownloadLocation}}" data-enabled="{{if .Enabled}}true{{else}}false{{end}}">
+  <td class="name">
+    <span class="primary">{{if $src.Name}}{{$src.Name}}{{else}}Untitled{{end}}</span>
+    {{if $src.LinkSelector}}<span class="sub">{{$src.LinkSelector}}</span>{{end}}
+    <div class="forms">
+      <form id="run-{{.ID}}" method="post" action="/schedules/{{.ID}}/run"></form>
+      <form id="open-{{.ID}}" method="post" action="/open"><input type="hidden" name="path" value="{{.DownloadLocation}}"></form>
+      <form id="del-source-{{$src.ID}}-{{.ID}}" method="post" action="/sources/{{$src.ID}}/delete"></form>
+      <form id="del-schedule-{{.ID}}" method="post" action="/schedules/{{.ID}}/delete"></form>
+    </div>
+  </td>
+  <td>{{kind $src.Provider}}</td>
+  <td class="clip"><a href="{{$src.URL}}">{{$src.URL}}</a></td>
+  <td data-sort="{{.IntervalSeconds}}">{{every .EveryCount .EveryUnit}}</td>
+  <td data-sort="{{unix .NextRunAt}}">{{stamp .NextRunAt}}</td>
+  <td class="num" data-sort="{{.MaxNew}}">{{.MaxNew}}</td>
+  <td class="clip path">{{.DownloadLocation}}</td>
+  <td>{{if .Enabled}}On{{else}}Off{{end}}</td>
+</tr>
+{{end}}
+{{end}}
 {{end}}
 
 {{define "captureFields"}}

@@ -23,7 +23,7 @@ type Podcast struct{}
 func (Podcast) Kind() string { return KindPodcast }
 
 func (Podcast) Run(ctx context.Context, req Request) (Summary, error) {
-	client := &http.Client{}
+	client := mediaClient
 	var body []byte
 	_, err := withRetry(ctx, 3, func() error {
 		var getErr error

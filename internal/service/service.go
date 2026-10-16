@@ -14,6 +14,7 @@ import (
 	"github.com/martinshaw/marchive-two/internal/provider"
 	"github.com/martinshaw/marchive-two/internal/runner"
 	"github.com/martinshaw/marchive-two/internal/store"
+	"github.com/martinshaw/marchive-two/internal/supervise"
 )
 
 // Error is a failure with an HTTP status.
@@ -46,10 +47,15 @@ type ScheduleInput struct {
 	Capture          *string `json:"capture"`
 }
 
-// SettingsInput changes concurrency. Browser captures stay at one.
+// SettingsInput changes concurrency, the UI port, and the login service.
+// ListenPort zero means a random port on the next start.
+// A nil login flag leaves that flag unchanged.
 type SettingsInput struct {
-	PodcastConcurrency *int `json:"podcastConcurrency"`
-	BrowserConcurrency *int `json:"browserConcurrency"`
+	PodcastConcurrency *int  `json:"podcastConcurrency"`
+	BrowserConcurrency *int  `json:"browserConcurrency"`
+	ListenPort         *int  `json:"listenPort"`
+	OpenOnLogin        *bool `json:"openOnLogin"`
+	RestartOnCrash     *bool `json:"restartOnCrash"`
 }
 
 // State is the snapshot rendered by the UI.
@@ -61,6 +67,10 @@ type State struct {
 	ChromeError        string        `json:"chromeError"`
 	PodcastConcurrency int           `json:"podcastConcurrency"`
 	BrowserConcurrency int           `json:"browserConcurrency"`
+	ListenPort         int           `json:"listenPort"`
+	ActivePort         int           `json:"activePort"`
+	OpenOnLogin        bool          `json:"openOnLogin"`
+	RestartOnCrash     bool          `json:"restartOnCrash"`
 	DefaultFolder      string        `json:"defaultFolder"`
 	Sources            []SourceState `json:"sources"`
 	Runs               []RunState    `json:"runs"`
@@ -84,6 +94,10 @@ type Service struct {
 	Store   *store.Store
 	Runner  *runner.Runner
 	Browser *browser.Client
+	// ActivePort is the port this process is listening on.
+	ActivePort int
+	// DataDir is the directory the login service should keep using.
+	DataDir string
 }
 
 func New(st *store.Store, run *runner.Runner, br *browser.Client) *Service {
@@ -101,6 +115,15 @@ func (s *Service) State() (State, error) {
 		return State{}, err
 	}
 	st.PodcastConcurrency, err = s.Store.PodcastConcurrency()
+	if err != nil {
+		return State{}, err
+	}
+	st.ListenPort, err = s.Store.ListenPort()
+	if err != nil {
+		return State{}, err
+	}
+	st.ActivePort = s.ActivePort
+	st.OpenOnLogin, st.RestartOnCrash, err = supervise.Current()
 	if err != nil {
 		return State{}, err
 	}
@@ -315,8 +338,51 @@ func (s *Service) UpdateSettings(in SettingsInput) error {
 			return err
 		}
 	}
+	if in.ListenPort != nil {
+		n := *in.ListenPort
+		if n < 0 || n > 65535 {
+			return &Error{Status: 400, Msg: "choose a port from 1 to 65535, or random"}
+		}
+		if err := s.Store.SetListenPort(n); err != nil {
+			return err
+		}
+	}
 	if err := s.Store.SetBrowserConcurrency(1); err != nil {
 		return err
+	}
+	if in.OpenOnLogin != nil || in.RestartOnCrash != nil {
+		if err := s.applyLoginService(in); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) applyLoginService(in SettingsInput) error {
+	open, restart, err := supervise.Current()
+	if err != nil {
+		return err
+	}
+	if in.OpenOnLogin != nil {
+		open = *in.OpenOnLogin
+	}
+	if in.RestartOnCrash != nil {
+		restart = *in.RestartOnCrash
+	}
+	dir := s.DataDir
+	if dir == "" {
+		dir, err = paths.Resolve("")
+		if err != nil {
+			return err
+		}
+	}
+	err = supervise.Apply(supervise.Spec{
+		DataDir:        dir,
+		OpenOnLogin:    open,
+		RestartOnCrash: restart,
+	})
+	if err != nil {
+		return &Error{Status: 400, Msg: err.Error()}
 	}
 	return nil
 }

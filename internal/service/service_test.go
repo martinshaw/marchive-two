@@ -47,6 +47,25 @@ func TestCreateSourceValidates(t *testing.T) {
 	if src.URL != "https://podcasts.example/feed" {
 		t.Fatalf("url %s", src.URL)
 	}
+	port := 8080
+	if err := svc.UpdateSettings(SettingsInput{ListenPort: &port}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := svc.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ListenPort != 8080 {
+		t.Fatalf("listen port %d", state.ListenPort)
+	}
+	bad := 70000
+	if err := svc.UpdateSettings(SettingsInput{ListenPort: &bad}); err == nil {
+		t.Fatal("expected an invalid port error")
+	}
+	zero := 0
+	if err := svc.UpdateSettings(SettingsInput{ListenPort: &zero}); err != nil {
+		t.Fatal(err)
+	}
 	_, err = svc.RunNow(scheduleID)
 	var se *Error
 	if !errors.As(err, &se) || se.Status != 409 {

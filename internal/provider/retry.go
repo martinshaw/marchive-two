@@ -34,8 +34,14 @@ func withRetry(ctx context.Context, attempts int, fn func() error) (int, error) 
 	return attempts, err
 }
 
+type noRetry interface{ NoRetry() bool }
+
 func retryable(err error) bool {
 	if err == nil {
+		return false
+	}
+	var stop noRetry
+	if errors.As(err, &stop) && stop.NoRetry() {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

@@ -34,7 +34,7 @@ func Execute() error {
 			return serve(cmd, true)
 		},
 	}
-	root.PersistentFlags().StringVar(&dataDirFlag, "data-dir", "", "data directory (default: ~/Library/Application Support/Marchive)")
+	root.PersistentFlags().StringVar(&dataDirFlag, "data-dir", "", "data directory (default: the per-user Marchive folder)")
 
 	root.AddCommand(&cobra.Command{
 		Use:   "serve",

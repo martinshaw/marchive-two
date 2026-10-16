@@ -86,13 +86,7 @@ func (c *Client) BeginSignIn() error {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, bin,
-			"--user-data-dir="+c.profile,
-			"--no-first-run",
-			"--no-default-browser-check",
-			"--new-window",
-			"about:blank",
-		)
+		cmd := startVisibleChrome(ctx, bin, c.profile)
 		_ = cmd.Run()
 	}()
 	return nil
@@ -128,14 +122,10 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 	fetchCtx, cancel := context.WithTimeout(ctx, 75*time.Second)
 	defer cancel()
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(bin),
-		chromedp.UserDataDir(c.profile),
-		chromedp.Flag("headless", "new"),
-		chromedp.Flag("mute-audio", true),
-		chromedp.WindowSize(1280, 1800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(fetchCtx, opts...)
+	allocCtx, allocCancel, err := c.allocator(fetchCtx, bin)
+	if err != nil {
+		return nil, err
+	}
 	defer allocCancel()
 	taskCtx, taskCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(func(string, ...any) {}))
 	defer taskCancel()
