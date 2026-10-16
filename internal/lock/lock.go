@@ -4,7 +4,6 @@ package lock
 import (
 	"errors"
 	"os"
-	"syscall"
 )
 
 // ErrBusy means another process holds the data directory.
@@ -21,11 +20,8 @@ func Acquire(path string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := flock(f); err != nil {
 		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, ErrBusy
-		}
 		return nil, err
 	}
 	return &Lock{f: f}, nil
@@ -36,7 +32,7 @@ func (l *Lock) Release() error {
 	if l == nil || l.f == nil {
 		return nil
 	}
-	err := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	err := funlock(l.f)
 	cerr := l.f.Close()
 	l.f = nil
 	if err != nil {

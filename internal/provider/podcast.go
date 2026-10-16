@@ -106,7 +106,8 @@ func (Podcast) Run(ctx context.Context, req Request) (Summary, error) {
 			return Summary{}, err
 		}
 		record.ID = id
-		if enclosure == "" {
+		capture := Resolve(req.Source.Provider, req.Source.Capture)
+		if enclosure == "" && capture.Audio {
 			record.Status = store.StatusFailed
 			record.Error = "Episode has no media file."
 			_ = req.Store.UpdateItem(record)
@@ -168,26 +169,31 @@ func (Podcast) Run(ctx context.Context, req Request) (Summary, error) {
 }
 
 func saveEpisode(ctx context.Context, client *http.Client, req Request, item *gofeed.Item, feedTitle string, record *store.Item, enclosure string) error {
+	capture := Resolve(req.Source.Provider, req.Source.Capture)
 	dir := filepath.Join(req.Schedule.DownloadLocation, SafeFileName(record.Title, record.IdentityKey))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	meta := episodeMeta(item, feedTitle, enclosure)
-	raw, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		return err
+	if capture.Metadata {
+		meta := episodeMeta(item, feedTitle, enclosure)
+		raw, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644); err != nil {
+			return err
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644); err != nil {
-		return err
-	}
-	dest := filepath.Join(dir, "episode"+extensionFrom(enclosure, ""))
-	attempts, err := withRetry(ctx, 3, func() error {
-		return downloadFile(ctx, client, enclosure, dest)
-	})
-	record.RetryCount = attempts - 1
-	if err != nil {
-		os.RemoveAll(dir)
-		return err
+	if capture.Audio {
+		dest := filepath.Join(dir, "episode"+extensionFrom(enclosure, ""))
+		attempts, err := withRetry(ctx, 3, func() error {
+			return downloadFile(ctx, client, enclosure, dest)
+		})
+		record.RetryCount = attempts - 1
+		if err != nil {
+			os.RemoveAll(dir)
+			return err
+		}
 	}
 	record.Status = store.StatusSucceeded
 	record.DownloadLocation = dir

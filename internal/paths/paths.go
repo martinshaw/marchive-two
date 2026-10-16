@@ -38,6 +38,15 @@ func Resolve(flag string) (string, error) {
 	return abs, nil
 }
 
+// HomeArchive is the default place for captured files: a Marchive folder in the user's home directory.
+func HomeArchive() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Marchive"), nil
+}
+
 func DB(dir string) string      { return filepath.Join(dir, "marchive.db") }
 func Lock(dir string) string    { return filepath.Join(dir, "lock") }
 func Port(dir string) string    { return filepath.Join(dir, "port") }

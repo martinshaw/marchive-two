@@ -17,6 +17,7 @@ type saveMode struct {
 	Text       bool
 	Screenshot bool
 	MHTML      bool
+	Metadata   bool
 }
 
 func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL string, mode saveMode) (store.Item, error) {
@@ -84,12 +85,14 @@ func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL st
 			return store.Item{}, err
 		}
 	}
-	raw, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		return store.Item{}, err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644); err != nil {
-		return store.Item{}, err
+	if mode.Metadata {
+		raw, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			return store.Item{}, err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644); err != nil {
+			return store.Item{}, err
+		}
 	}
 
 	item := store.Item{

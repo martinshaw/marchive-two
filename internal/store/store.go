@@ -32,6 +32,7 @@ type Source struct {
 	URL          string    `json:"url"`
 	Provider     string    `json:"provider"`
 	LinkSelector string    `json:"linkSelector"`
+	Capture      string    `json:"capture"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
@@ -157,7 +158,35 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(schema)
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	return s.ensureColumn("sources", "capture", "TEXT NOT NULL DEFAULT ''")
+}
+
+func (s *Store) ensureColumn(table, column, decl string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + decl)
 	return err
 }
 
@@ -168,6 +197,7 @@ CREATE TABLE IF NOT EXISTS sources (
   url TEXT NOT NULL,
   provider TEXT NOT NULL,
   link_selector TEXT NOT NULL DEFAULT '',
+  capture TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -234,9 +264,9 @@ func (s *Store) CreateSourceWithSchedule(src Source, sch Schedule) (int64, int64
 	defer tx.Rollback()
 
 	res, err := tx.Exec(`
-		INSERT INTO sources (name, url, provider, link_selector, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		src.Name, src.URL, src.Provider, src.LinkSelector, fmtTime(now), fmtTime(now))
+		INSERT INTO sources (name, url, provider, link_selector, capture, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		src.Name, src.URL, src.Provider, src.LinkSelector, src.Capture, fmtTime(now), fmtTime(now))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -266,7 +296,7 @@ func (s *Store) CreateSourceWithSchedule(src Source, sch Schedule) (int64, int64
 }
 
 func (s *Store) ListSources() ([]Source, error) {
-	rows, err := s.db.Query(`SELECT id, name, url, provider, link_selector, created_at, updated_at FROM sources ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, url, provider, link_selector, capture, created_at, updated_at FROM sources ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +313,7 @@ func (s *Store) ListSources() ([]Source, error) {
 }
 
 func (s *Store) GetSource(id int64) (Source, error) {
-	row := s.db.QueryRow(`SELECT id, name, url, provider, link_selector, created_at, updated_at FROM sources WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, name, url, provider, link_selector, capture, created_at, updated_at FROM sources WHERE id = ?`, id)
 	src, err := scanSource(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Source{}, ErrNotFound
@@ -309,6 +339,21 @@ func (s *Store) DeleteSource(id int64) error {
 func (s *Store) SetSourceName(id int64, name string) error {
 	_, err := s.db.Exec(`UPDATE sources SET name = ?, updated_at = ? WHERE id = ?`, name, fmtTime(time.Now().UTC()), id)
 	return err
+}
+
+func (s *Store) SetSourceCapture(id int64, capture string) error {
+	res, err := s.db.Exec(`UPDATE sources SET capture = ?, updated_at = ? WHERE id = ?`, capture, fmtTime(time.Now().UTC()), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListSchedules() ([]ScheduleDetail, error) {
@@ -792,7 +837,7 @@ const scheduleSelect = `
 SELECT schedules.id, schedules.source_id, schedules.interval_seconds, schedules.download_location,
        schedules.enabled, schedules.max_new, schedules.last_run_at, schedules.next_run_at,
        schedules.created_at, schedules.updated_at,
-       sources.id, sources.name, sources.url, sources.provider, sources.link_selector,
+       sources.id, sources.name, sources.url, sources.provider, sources.link_selector, sources.capture,
        sources.created_at, sources.updated_at
 FROM schedules
 JOIN sources ON sources.id = schedules.source_id
@@ -805,7 +850,7 @@ type scanner interface {
 func scanSource(sc scanner) (Source, error) {
 	var src Source
 	var created, updated string
-	err := sc.Scan(&src.ID, &src.Name, &src.URL, &src.Provider, &src.LinkSelector, &created, &updated)
+	err := sc.Scan(&src.ID, &src.Name, &src.URL, &src.Provider, &src.LinkSelector, &src.Capture, &created, &updated)
 	if err != nil {
 		return Source{}, err
 	}
@@ -822,7 +867,7 @@ func scanScheduleDetail(sc scanner) (ScheduleDetail, error) {
 	err := sc.Scan(
 		&d.ID, &d.SourceID, &d.IntervalSeconds, &d.DownloadLocation, &enabled, &d.MaxNew,
 		&last, &next, &schCreated, &schUpdated,
-		&d.Source.ID, &d.Source.Name, &d.Source.URL, &d.Source.Provider, &d.Source.LinkSelector,
+		&d.Source.ID, &d.Source.Name, &d.Source.URL, &d.Source.Provider, &d.Source.LinkSelector, &d.Source.Capture,
 		&srcCreated, &srcUpdated,
 	)
 	if err != nil {

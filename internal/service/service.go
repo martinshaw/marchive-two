@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/martinshaw/marchive-two/internal/browser"
+	"github.com/martinshaw/marchive-two/internal/paths"
 	"github.com/martinshaw/marchive-two/internal/provider"
 	"github.com/martinshaw/marchive-two/internal/runner"
 	"github.com/martinshaw/marchive-two/internal/store"
@@ -29,6 +30,7 @@ type SourceInput struct {
 	URL              string `json:"url"`
 	Provider         string `json:"provider"`
 	LinkSelector     string `json:"linkSelector"`
+	Capture          string `json:"capture"`
 	IntervalSeconds  int    `json:"intervalSeconds"`
 	DownloadLocation string `json:"downloadLocation"`
 	MaxNew           int    `json:"maxNew"`
@@ -41,6 +43,7 @@ type ScheduleInput struct {
 	DownloadLocation *string `json:"downloadLocation"`
 	MaxNew           *int    `json:"maxNew"`
 	Enabled          *bool   `json:"enabled"`
+	Capture          *string `json:"capture"`
 }
 
 // SettingsInput changes concurrency. Browser captures stay at one.
@@ -58,6 +61,7 @@ type State struct {
 	ChromeError        string        `json:"chromeError"`
 	PodcastConcurrency int           `json:"podcastConcurrency"`
 	BrowserConcurrency int           `json:"browserConcurrency"`
+	DefaultFolder      string        `json:"defaultFolder"`
 	Sources            []SourceState `json:"sources"`
 	Runs               []RunState    `json:"runs"`
 	Error              string        `json:"error,omitempty"`
@@ -88,6 +92,9 @@ func New(st *store.Store, run *runner.Runner, br *browser.Client) *Service {
 
 func (s *Service) State() (State, error) {
 	st := State{BrowserConcurrency: 1, PodcastConcurrency: 2}
+	if folder, ferr := paths.HomeArchive(); ferr == nil {
+		st.DefaultFolder = folder
+	}
 	var err error
 	st.RunnerEnabled, err = s.Store.RunnerEnabled()
 	if err != nil {
@@ -166,6 +173,10 @@ func (s *Service) CreateSource(in SourceInput) (int64, int64, error) {
 	if in.Provider != provider.KindArticles {
 		in.LinkSelector = ""
 	}
+	capture, err := provider.NormalizeStored(in.Provider, in.Capture)
+	if err != nil {
+		return 0, 0, &Error{Status: 400, Msg: err.Error()}
+	}
 	if in.IntervalSeconds < 30 {
 		return 0, 0, &Error{Status: 400, Msg: "the interval must be at least 30 seconds"}
 	}
@@ -191,6 +202,7 @@ func (s *Service) CreateSource(in SourceInput) (int64, int64, error) {
 		URL:          normalized,
 		Provider:     in.Provider,
 		LinkSelector: strings.TrimSpace(in.LinkSelector),
+		Capture:      capture,
 	}, store.Schedule{
 		IntervalSeconds:  in.IntervalSeconds,
 		DownloadLocation: dest,
@@ -238,6 +250,15 @@ func (s *Service) UpdateSchedule(id int64, in ScheduleInput) error {
 			return err
 		}
 		current.DownloadLocation = dest
+	}
+	if in.Capture != nil {
+		capture, err := provider.NormalizeStored(current.Source.Provider, *in.Capture)
+		if err != nil {
+			return &Error{Status: 400, Msg: err.Error()}
+		}
+		if err := s.Store.SetSourceCapture(current.SourceID, capture); err != nil {
+			return err
+		}
 	}
 	if err := s.Store.UpdateSchedule(current.Schedule); err != nil {
 		return err
@@ -308,6 +329,29 @@ func (s *Service) BeginSignIn() error {
 		return &Error{Status: 409, Msg: err.Error()}
 	}
 	return nil
+}
+
+func (s *Service) ChromeInstall() browser.InstallSnapshot {
+	if s.Browser == nil {
+		return browser.InstallSnapshot{Phase: "idle", Message: "Marchive is not running."}
+	}
+	return s.Browser.InstallSnapshot()
+}
+
+func (s *Service) StartChromeInstall() error {
+	if s.Browser == nil {
+		return &Error{Status: 409, Msg: "Marchive is not running."}
+	}
+	if err := s.Browser.StartInstall(); err != nil {
+		return &Error{Status: 409, Msg: err.Error()}
+	}
+	return nil
+}
+
+func (s *Service) CancelChromeInstall() {
+	if s.Browser != nil {
+		s.Browser.CancelInstall()
+	}
 }
 
 func (s *Service) OpenPath(target string) error {

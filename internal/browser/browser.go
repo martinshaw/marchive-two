@@ -38,13 +38,14 @@ type Fetcher interface {
 // Client launches Chrome with a persistent profile, one capture at a time.
 type Client struct {
 	profile   string
+	install   *Installer
 	mu        sync.Mutex
 	busy      bool
 	signingIn bool
 }
 
 func New(profileDir string) *Client {
-	return &Client{profile: profileDir}
+	return &Client{profile: profileDir, install: NewInstaller()}
 }
 
 // Status reports whether a capture or a sign-in window is using Chrome.
@@ -170,11 +171,16 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 	doc.URL = finalURL
 	doc.HTML = html
 	if opt.MHTML {
-		data, err := page.CaptureSnapshot().WithFormat(page.CaptureSnapshotFormatMhtml).Do(taskCtx)
-		if err != nil {
+		if err := chromedp.Run(taskCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+			data, err := page.CaptureSnapshot().WithFormat(page.CaptureSnapshotFormatMhtml).Do(ctx)
+			if err != nil {
+				return err
+			}
+			doc.MHTML = data
+			return nil
+		})); err != nil {
 			return nil, err
 		}
-		doc.MHTML = data
 	}
 	if doc.HTML == "" {
 		return nil, errors.New("chrome returned an empty page")

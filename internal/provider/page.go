@@ -15,7 +15,8 @@ type Webpage struct{}
 func (Webpage) Kind() string { return KindWebpage }
 
 func (Webpage) Run(ctx context.Context, req Request) (Summary, error) {
-	doc, hash, err := fetchHashed(ctx, req, browser.Options{Screenshot: true, MHTML: true, Scroll: true})
+	capture := Resolve(req.Source.Provider, req.Source.Capture)
+	doc, hash, err := fetchHashed(ctx, req, browser.Options{Screenshot: capture.Screenshot, MHTML: capture.MHTML, Scroll: true})
 	if err != nil {
 		return Summary{}, err
 	}
@@ -33,7 +34,7 @@ func (Webpage) Run(ctx context.Context, req Request) (Summary, error) {
 	if seen {
 		return Summary{Note: "Already archived an identical snapshot."}, nil
 	}
-	item, err := saveSnapshot(req, doc, "snapshot", hash, doc.URL, saveMode{HTML: true, Text: true, Screenshot: true, MHTML: true})
+	item, err := saveSnapshot(req, doc, "snapshot", hash, doc.URL, capture.mode())
 	if errors.Is(err, store.ErrExists) {
 		return Summary{Note: "Already archived an identical snapshot."}, nil
 	}
@@ -50,6 +51,7 @@ type Text struct{}
 func (Text) Kind() string { return KindText }
 
 func (Text) Run(ctx context.Context, req Request) (Summary, error) {
+	capture := Resolve(req.Source.Provider, req.Source.Capture)
 	doc, hash, err := fetchHashed(ctx, req, browser.Options{Scroll: true})
 	if err != nil {
 		return Summary{}, err
@@ -68,7 +70,7 @@ func (Text) Run(ctx context.Context, req Request) (Summary, error) {
 	if seen {
 		return Summary{Note: "Already archived an identical extract."}, nil
 	}
-	item, err := saveSnapshot(req, doc, "text", hash, doc.URL, saveMode{Text: true})
+	item, err := saveSnapshot(req, doc, "text", hash, doc.URL, capture.mode())
 	if errors.Is(err, store.ErrExists) {
 		return Summary{Note: "Already archived an identical extract."}, nil
 	}

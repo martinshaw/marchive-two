@@ -79,7 +79,7 @@ func captureArticle(ctx context.Context, req Request, link string) error {
 	var doc *browser.Document
 	attempts, err := withRetry(ctx, 3, func() error {
 		var fetchErr error
-		doc, fetchErr = req.Fetch.Fetch(ctx, link, browser.Options{})
+		doc, fetchErr = req.Fetch.Fetch(ctx, link, articleFetchOptions(req))
 		return fetchErr
 	})
 	if err != nil {
@@ -130,6 +130,15 @@ func captureArticle(ctx context.Context, req Request, link string) error {
 		}
 		return errNotArticle
 	}
-	_, err = saveSnapshot(req, doc, "article", identity, link, saveMode{HTML: true, Text: true})
+	_, err = saveSnapshot(req, doc, "article", identity, link, Resolve(req.Source.Provider, req.Source.Capture).mode())
 	return err
+}
+
+func articleFetchOptions(req Request) browser.Options {
+	capture := Resolve(req.Source.Provider, req.Source.Capture)
+	return browser.Options{
+		Screenshot: capture.Screenshot,
+		MHTML:      capture.MHTML,
+		Scroll:     capture.Screenshot || capture.MHTML,
+	}
 }

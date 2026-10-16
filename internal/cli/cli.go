@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/signal"
 	"strconv"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -99,7 +97,7 @@ func serve(cmd *cobra.Command, openBrowser bool) error {
 		}
 		return nil
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals()...)
 	defer stop()
 	return app.Serve(ctx, app.Options{DataDir: dir, OpenBrowser: openBrowser})
 }

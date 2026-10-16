@@ -16,6 +16,7 @@ import (
 	"github.com/martinshaw/marchive-two/internal/provider"
 	"github.com/martinshaw/marchive-two/internal/service"
 	"github.com/martinshaw/marchive-two/internal/store"
+	"github.com/martinshaw/marchive-two/internal/version"
 )
 
 //go:embed templates static
@@ -30,8 +31,27 @@ func New(svc *service.Service) http.Handler {
 	h := &handler{
 		svc: svc,
 		tmpl: template.Must(template.New("").Funcs(template.FuncMap{
-			"kind": provider.Label,
-			"stamp": func(t time.Time) string {
+			"kind":    provider.Label,
+			"version": func() string { return version.Version },
+			"every": func(n int, unit string) string {
+				if n == 1 && len(unit) > 1 {
+					unit = unit[:len(unit)-1]
+				}
+				return strconv.Itoa(n) + " " + unit
+			},
+			"stamp": func(v any) string {
+				var t time.Time
+				switch x := v.(type) {
+				case time.Time:
+					t = x
+				case *time.Time:
+					if x == nil {
+						return ""
+					}
+					t = *x
+				default:
+					return ""
+				}
 				if t.IsZero() {
 					return ""
 				}
@@ -63,6 +83,9 @@ func New(svc *service.Service) http.Handler {
 	mux.HandleFunc("POST /settings", h.settings)
 	mux.HandleFunc("POST /api/browser/signin", h.signIn)
 	mux.HandleFunc("POST /browser/signin", h.signIn)
+	mux.HandleFunc("GET /api/chrome", h.chromeStatus)
+	mux.HandleFunc("POST /api/chrome/install", h.chromeInstall)
+	mux.HandleFunc("POST /api/chrome/install/cancel", h.chromeCancel)
 	mux.HandleFunc("POST /api/open", h.openPath)
 	mux.HandleFunc("POST /open", h.openPath)
 	return guard(mux)
@@ -137,11 +160,17 @@ func (h *handler) createSource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		enabled := r.FormValue("enabled") == "true"
+		capture, err := captureFromForm(r, r.FormValue("provider"))
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
 		in = service.SourceInput{
 			Name:             r.FormValue("name"),
 			URL:              r.FormValue("url"),
 			Provider:         r.FormValue("provider"),
 			LinkSelector:     r.FormValue("link_selector"),
+			Capture:          capture,
 			IntervalSeconds:  seconds,
 			DownloadLocation: r.FormValue("download_location"),
 			MaxNew:           maxNew,
@@ -202,11 +231,17 @@ func (h *handler) updateSchedule(w http.ResponseWriter, r *http.Request) {
 		}
 		enabled := r.FormValue("enabled") == "true"
 		dest := r.FormValue("download_location")
+		capture, err := captureFromForm(r, "")
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
 		in = service.ScheduleInput{
 			IntervalSeconds:  &seconds,
 			DownloadLocation: &dest,
 			MaxNew:           &maxNew,
 			Enabled:          &enabled,
+			Capture:          &capture,
 		}
 	}
 	if err := h.svc.UpdateSchedule(id, in); err != nil {
@@ -319,6 +354,23 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (h *handler) chromeStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.ChromeInstall())
+}
+
+func (h *handler) chromeInstall(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.StartChromeInstall(); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, h.svc.ChromeInstall())
+}
+
+func (h *handler) chromeCancel(w http.ResponseWriter, r *http.Request) {
+	h.svc.CancelChromeInstall()
+	writeJSON(w, http.StatusOK, h.svc.ChromeInstall())
+}
+
 func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {
 	var target string
 	if wantsJSON(r) {
@@ -410,6 +462,17 @@ func atoiDefault(raw string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	return strconv.Atoi(raw)
+}
+
+func captureFromForm(r *http.Request, kind string) (string, error) {
+	if kind == "" {
+		kind = r.FormValue("provider")
+	}
+	raw, err := provider.EncodeSelection(kind, r.FormValue("capture_all") == "true", r.Form["capture"])
+	if err != nil {
+		return "", &service.Error{Status: 400, Msg: err.Error()}
+	}
+	return raw, nil
 }
 
 func guard(next http.Handler) http.Handler {

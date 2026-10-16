@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/martinshaw/marchive-two/internal/browser"
@@ -156,7 +155,7 @@ func StartBackground(dir string) error {
 	cmd := exec.Command(exe, "serve", "--data-dir", dir)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
 		return err
@@ -166,5 +165,5 @@ func StartBackground(dir string) error {
 
 // Open asks macOS to open a URL.
 func Open(rawURL string) error {
-	return exec.Command("open", rawURL).Start()
+	return openCommand(rawURL).Start()
 }
