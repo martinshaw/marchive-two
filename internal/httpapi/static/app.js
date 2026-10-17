@@ -4,23 +4,10 @@
   var columnSort = {};
   var suppressClick = false;
   var confirmAction = null;
-  var titles = {
-    all: ["Sources", "Library"],
-    webpage: ["Webpages", "Sources"],
-    article_index: ["Articles", "Sources"],
-    podcast: ["Podcasts", "Sources"],
-    text_extract: ["Text", "Sources"],
-    captures: ["Captures", "Library"],
-    active: ["In Progress", "Captures"],
-    failed: ["Failed", "Captures"],
-    succeeded: ["Succeeded", "Captures"],
-    words: ["Words", "Captures"],
-    reader: ["Reader", "Captures"],
-    settings: ["Settings", "Marchive"]
-  };
   var cloudCache = {};
   var messageCache = {};
   var messageToken = 0;
+  var messageItem = "";
   var messageFile = "";
   var timelineData = null;
   var timelineFocus = "";
@@ -84,10 +71,6 @@
       var on = item.dataset.view === view && (item.dataset.filter || "") === (filter || "");
       item.classList.toggle("is-selected", on);
     });
-    var key = view === "settings" || view === "words" || view === "reader" ? view : (view === "captures" && (!filter || filter === "all") ? "captures" : (filter || "all"));
-    var title = titles[key] || titles.all;
-    $("view-title").textContent = title[0];
-    $("view-sub").textContent = title[1];
     applyFilters();
     if (view === "words") loadTimeline();
     if (view === "reader") paintReaderList();
@@ -268,10 +251,15 @@
     if (button && label) {
       button.value = on ? "false" : "true";
       label.textContent = on ? "Stop" : "Start";
-      var play = button.querySelector(".icon-start");
-      var stop = button.querySelector(".icon-stop");
-      if (play) play.hidden = on;
-      if (stop) stop.hidden = !on;
+      button.classList.toggle("is-on", on);
+      var icon = $("tool-runner-icon");
+      var href = on ? "#i-stop" : "#i-play";
+      if (icon && icon.getAttribute("href") !== href) {
+        var next = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        next.id = "tool-runner-icon";
+        next.setAttribute("href", href);
+        icon.replaceWith(next);
+      }
     }
     if (menu) menu.textContent = on ? "Stop Runner" : "Start Runner";
     var text = on ? "Runner on" : "Runner off";
@@ -881,6 +869,27 @@
   bindCapture($("sheet-edit"));
 
   var wordColors = ["#0a64ff", "#1f8a4c", "#e07a12", "#9b4dca", "#d92b2b", "#6e6e73"];
+  var hideCommon = true;
+  try {
+    if (localStorage.getItem("marchive-hide-common") === "0") hideCommon = false;
+  } catch (e) {}
+  document.querySelectorAll(".hide-common").forEach(function (box) {
+    box.checked = hideCommon;
+    box.addEventListener("change", function () {
+      hideCommon = box.checked;
+      document.querySelectorAll(".hide-common").forEach(function (other) { other.checked = hideCommon; });
+      try { localStorage.setItem("marchive-hide-common", hideCommon ? "1" : "0"); } catch (e) {}
+      cloudCache = {};
+      timelineData = null;
+      timelineFocus = "";
+      refreshCaptureWords();
+      if (state.view === "words") loadTimeline();
+    });
+  });
+
+  function wordURL(path) {
+    return hideCommon ? path : path + "?common=1";
+  }
 
   function refreshCaptureWords() {
     var label = $("capture-cloud-label");
@@ -890,7 +899,7 @@
       refreshItemWords();
       return;
     }
-    loadCloud("capture", "/api/runs/" + state.run + "/words", $("capture-cloud"), $("capture-cloud-empty"), "This capture has no word index.", function (data) {
+    loadCloud("capture", wordURL("/api/runs/" + state.run + "/words"), $("capture-cloud"), $("capture-cloud-empty"), "This capture has no word index.", function (data) {
       if (label) label.textContent = data.title ? "This capture · " + data.title : "This capture";
     });
     refreshItemWords();
@@ -903,7 +912,7 @@
       renderCloud($("item-cloud"), $("item-cloud-empty"), null, "Select an item to see its words.");
       return;
     }
-    loadCloud("item", "/api/items/" + state.item + "/words", $("item-cloud"), $("item-cloud-empty"), "This item has no word index.", function (data) {
+    loadCloud("item", wordURL("/api/items/" + state.item + "/words"), $("item-cloud"), $("item-cloud-empty"), "This item has no word index.", function (data) {
       if (label) label.textContent = data.title ? "This item · " + data.title : "This item";
     });
   }
@@ -945,7 +954,7 @@
       empty.hidden = false;
       empty.textContent = "Loading words…";
     }
-    fetch("/api/words", { cache: "no-store", headers: { "Accept": "application/json" } }).then(function (response) {
+    fetch(wordURL("/api/words"), { cache: "no-store", headers: { "Accept": "application/json" } }).then(function (response) {
       if (!response.ok) throw new Error("missing");
       return response.json();
     }).then(function (data) {
@@ -1121,9 +1130,14 @@
   function showMessage(id) {
     markReaderSelection(id);
     if (!id) {
+      messageItem = "";
       messageFile = "";
       messageHosts.forEach(function (host) { clearMessage(host, "Select an item to read its files."); });
       return;
+    }
+    if (String(messageItem) !== String(id)) {
+      messageItem = id;
+      messageFile = "";
     }
     var cached = messageCache[id];
     if (cached) {
@@ -1138,7 +1152,6 @@
     }).then(function (data) {
       if (token !== messageToken) return;
       messageCache[id] = data;
-      messageFile = "";
       paintMessage(data);
     }).catch(function () {
       if (token !== messageToken) return;

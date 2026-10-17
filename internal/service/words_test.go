@@ -51,21 +51,21 @@ func TestWordCloudsAggregateItemsAndCaptures(t *testing.T) {
 	insertWordItem(t, st, sourceID, second.ID, outside, "outside")
 
 	svc := &Service{Store: st}
-	item, err := svc.ItemWords(oneID)
+	item, err := svc.ItemWords(oneID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Title != "Desk notes" || countOf(item.Words, "archives") != 2 || countOf(item.Words, "secret") != 0 {
 		t.Fatalf("item %+v", item)
 	}
-	run, err := svc.RunWords(first.ID)
+	run, err := svc.RunWords(first.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if run.Title != "Desk" || run.ItemCount != 2 || countOf(run.Words, "archives") != 3 || countOf(run.Words, "later") != 1 {
 		t.Fatalf("run %+v", run)
 	}
-	line, err := svc.WordTimeline()
+	line, err := svc.WordTimeline(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,53 @@ func TestWordCloudsAggregateItemsAndCaptures(t *testing.T) {
 	}
 	if len(line.Captures) != 1 || line.Captures[0].RunID != first.ID || line.Captures[0].Counts["archives"] != 3 {
 		t.Fatalf("captures %+v", line.Captures)
+	}
+}
+
+func TestWordCloudDropsCommonWordsUnlessAsked(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "marchive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	archive := filepath.Join(dir, "archive")
+	sourceID, scheduleID, err := st.CreateSourceWithSchedule(store.Source{
+		Name: "Desk", URL: "https://example.com", Provider: "webpage",
+	}, store.Schedule{IntervalSeconds: 3600, DownloadLocation: archive, Enabled: true, MaxNew: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateRun(scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeIndex(t, filepath.Join(archive, "one"), provider.WordIndex{
+		Title: "Desk notes", WordCount: 11, UniqueCount: 2,
+		Words: []provider.WordCount{{Word: "the", Count: 9}, {Word: "archives", Count: 2}},
+	})
+	id := insertWordItem(t, st, sourceID, run.ID, filepath.Join(archive, "one"), "one")
+	svc := &Service{Store: st}
+	cloud, err := svc.ItemWords(id, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOf(cloud.Words, "the") != 0 || countOf(cloud.Words, "archives") != 2 || cloud.WordCount != 2 {
+		t.Fatalf("filtered %+v", cloud)
+	}
+	kept, err := svc.ItemWords(id, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOf(kept.Words, "the") != 9 {
+		t.Fatalf("kept %+v", kept)
+	}
+	line, err := svc.WordTimeline(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOf(line.Words, "the") != 0 || line.Captures[0].Counts["the"] != 0 || line.Captures[0].Counts["archives"] != 2 {
+		t.Fatalf("timeline %+v counts %+v", line.Words, line.Captures)
 	}
 }
 

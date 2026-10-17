@@ -180,9 +180,9 @@ func fileKind(name string) string {
 
 func fileRank(name string) int {
 	switch strings.ToLower(name) {
-	case "text.txt":
-		return 0
 	case "article.html":
+		return 0
+	case "text.txt":
 		return 1
 	case "page.html":
 		return 2

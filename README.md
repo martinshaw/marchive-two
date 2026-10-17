@@ -2,7 +2,7 @@
 
 Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, or the text of a page. One Go binary runs the scheduler, the capture jobs, and the UI.
 
-Version 0.2.2.
+Version 0.2.3.
 
 ## Contents
 

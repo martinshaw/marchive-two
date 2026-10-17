@@ -27,6 +27,7 @@ func TestItemMessageListsFilesAndRejectsEscape(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(itemDir, "text.txt"), []byte("Readable sentence."), 0o644)
+	os.WriteFile(filepath.Join(itemDir, "article.html"), []byte("<p>Article body.</p>"), 0o644)
 	os.WriteFile(filepath.Join(itemDir, "page.html"), []byte("<p>Hello</p>"), 0o644)
 	os.WriteFile(filepath.Join(itemDir, "screenshot.jpg"), []byte("img"), 0o644)
 	id, err := st.InsertItem(store.Item{
@@ -41,7 +42,7 @@ func TestItemMessageListsFilesAndRejectsEscape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Title != "Desk notes" || msg.SourceName != "Desk" || len(msg.Files) != 3 || msg.Files[0].Name != "text.txt" {
+	if msg.Title != "Desk notes" || msg.SourceName != "Desk" || len(msg.Files) != 4 || msg.Files[0].Name != "article.html" || msg.Files[1].Name != "text.txt" {
 		t.Fatalf("message %+v", msg)
 	}
 	path, err := svc.ItemFilePath(id, "text.txt")

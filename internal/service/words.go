@@ -33,7 +33,8 @@ type WordCapture struct {
 }
 
 // ItemWords reads the word index saved with one capture item.
-func (s *Service) ItemWords(id int64) (WordCloud, error) {
+// keepCommon leaves function words in the cloud. The default omits them.
+func (s *Service) ItemWords(id int64, keepCommon bool) (WordCloud, error) {
 	item, err := s.Store.GetItem(id)
 	if err != nil {
 		return WordCloud{}, err
@@ -42,11 +43,11 @@ func (s *Service) ItemWords(id int64) (WordCloud, error) {
 	if err != nil {
 		return WordCloud{}, err
 	}
-	return cloudFrom(index, item.RunID, item.ID, 0), nil
+	return cloudFrom(omitUnless(index, keepCommon), item.RunID, item.ID, 0), nil
 }
 
 // RunWords adds up words.json for every item in one capture.
-func (s *Service) RunWords(id int64) (WordCloud, error) {
+func (s *Service) RunWords(id int64, keepCommon bool) (WordCloud, error) {
 	detail, err := s.Store.GetRunDetail(id)
 	if err != nil {
 		return WordCloud{}, err
@@ -67,13 +68,13 @@ func (s *Service) RunWords(id int64) (WordCloud, error) {
 	if title == "" {
 		title = "Capture"
 	}
-	merged := provider.MergeWordIndexes(title, parts...)
+	merged := omitUnless(provider.MergeWordIndexes(title, parts...), keepCommon)
 	cloud := cloudFrom(merged, id, 0, len(parts))
 	return cloud, nil
 }
 
 // WordTimeline adds up every saved word index and keeps each capture's counts over time.
-func (s *Service) WordTimeline() (WordCloud, error) {
+func (s *Service) WordTimeline(keepCommon bool) (WordCloud, error) {
 	items, err := s.Store.ListWordItems()
 	if err != nil {
 		return WordCloud{}, err
@@ -108,7 +109,7 @@ func (s *Service) WordTimeline() (WordCloud, error) {
 		if name == "" {
 			name = "Capture"
 		}
-		merged := provider.MergeWordIndexes(name, current.parts...)
+		merged := omitUnless(provider.MergeWordIndexes(name, current.parts...), keepCommon)
 		if merged.WordCount == 0 {
 			continue
 		}
@@ -173,6 +174,13 @@ func (s *Service) loadWords(dir, title string) (provider.WordIndex, error) {
 		index.Words = []provider.WordCount{}
 	}
 	return index, nil
+}
+
+func omitUnless(index provider.WordIndex, keepCommon bool) provider.WordIndex {
+	if keepCommon {
+		return index
+	}
+	return provider.OmitCommonWords(index)
 }
 
 func cloudFrom(index provider.WordIndex, runID, itemID int64, items int) WordCloud {
