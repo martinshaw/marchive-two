@@ -81,11 +81,14 @@
 
   <div class="app">
     <div class="toolbar">
-      <div class="toolbar-title">
-        <h1 id="view-title">Sources</h1>
-        <p id="view-sub">Library</p>
-      </div>
       <div class="tools" role="toolbar" aria-label="Actions">
+        <form method="post" action="/runner" id="runner-form">
+          <button class="tool{{if .RunnerEnabled}} is-on{{end}}" name="enabled" id="tool-runner" value="{{if .RunnerEnabled}}false{{else}}true{{end}}">
+            <svg class="icon"><use id="tool-runner-icon" href="{{if .RunnerEnabled}}#i-stop{{else}}#i-play{{end}}"/></svg>
+            <span id="tool-runner-label">{{if .RunnerEnabled}}Stop{{else}}Start{{end}}</span>
+          </button>
+        </form>
+        <span class="tool-sep"></span>
         <button type="button" class="tool" data-action="add">
           <svg class="icon"><use href="#i-plus"/></svg>
           <span>Add</span>
@@ -94,13 +97,6 @@
           <svg class="icon"><use href="#i-play"/></svg>
           <span>Run</span>
         </button>
-        <form method="post" action="/runner" id="runner-form">
-          <button class="tool" name="enabled" id="tool-runner" value="{{if .RunnerEnabled}}false{{else}}true{{end}}">
-            <svg class="icon icon-start" {{if .RunnerEnabled}}hidden{{end}}><use href="#i-play"/></svg>
-            <svg class="icon icon-stop" {{if not .RunnerEnabled}}hidden{{end}}><use href="#i-stop"/></svg>
-            <span id="tool-runner-label">{{if .RunnerEnabled}}Stop{{else}}Start{{end}}</span>
-          </button>
-        </form>
         <button type="button" class="tool" data-action="cancel">
           <svg class="icon"><use href="#i-x"/></svg>
           <span>Cancel</span>
@@ -246,7 +242,10 @@
         <section class="pane" id="pane-words" data-pane="words">
           <div class="words-layout">
             <div class="cloud-card">
-              <div class="split-label" id="timeline-label">All captures</div>
+              <div class="cloud-head">
+                <div class="split-label" id="timeline-label">All captures</div>
+                <label class="common-toggle"><input type="checkbox" class="hide-common" checked> Hide common words</label>
+              </div>
               <div id="timeline-cloud" class="cloud" hidden></div>
               <p class="empty cloud-empty" id="timeline-empty">No word index yet.</p>
             </div>

@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -439,9 +442,43 @@ func (h *handler) itemFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.EqualFold(filepath.Base(path), "article.html") {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
+		_, _ = w.Write(readingDocument(body))
+		return
+	}
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	http.ServeFile(w, r, path)
+}
+
+const articleCSS = `html{background:#fff}body{margin:0 auto;padding:12px 8px 40px;max-width:66ch;color:#1d1d1f;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:19px;line-height:1.6}h1,h2,h3,h4{line-height:1.25;font-weight:650}h1{font-size:1.7em;margin:0 0 .6em}p{margin:0 0 1em}a{color:#0a64ff}img,video,svg{max-width:100%;height:auto}blockquote{margin:0 0 1em;padding-left:1em;border-left:3px solid #e4e4e6;color:#3a3a3c}pre,code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.85em}pre{white-space:pre-wrap}`
+
+func readingDocument(body []byte) []byte {
+	style := []byte("<style>" + articleCSS + "</style>")
+	lower := bytes.ToLower(body)
+	if bytes.Contains(lower, []byte("<html")) {
+		if i := bytes.Index(lower, []byte("</head>")); i >= 0 {
+			out := make([]byte, 0, len(body)+len(style))
+			out = append(out, body[:i]...)
+			out = append(out, style...)
+			out = append(out, body[i:]...)
+			return out
+		}
+	}
+	var buf bytes.Buffer
+	buf.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">`)
+	buf.Write(style)
+	buf.WriteString(`</head><body>`)
+	buf.Write(body)
+	buf.WriteString(`</body></html>`)
+	return buf.Bytes()
 }
 
 func (h *handler) itemWords(w http.ResponseWriter, r *http.Request) {
@@ -452,13 +489,13 @@ func (h *handler) runWords(w http.ResponseWriter, r *http.Request) {
 	h.wordCloud(w, r, h.svc.RunWords)
 }
 
-func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(int64) (service.WordCloud, error)) {
+func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(int64, bool) (service.WordCloud, error)) {
 	id, err := pathID(r)
 	if err != nil {
 		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid id"})
 		return
 	}
-	cloud, err := load(id)
+	cloud, err := load(id, keepCommonWords(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -467,12 +504,21 @@ func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(in
 }
 
 func (h *handler) wordTimeline(w http.ResponseWriter, r *http.Request) {
-	cloud, err := h.svc.WordTimeline()
+	cloud, err := h.svc.WordTimeline(keepCommonWords(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cloud)
+}
+
+func keepCommonWords(r *http.Request) bool {
+	switch r.URL.Query().Get("common") {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {

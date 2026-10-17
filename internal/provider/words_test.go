@@ -10,6 +10,16 @@ import (
 	"github.com/martinshaw/marchive-two/internal/browser"
 )
 
+func TestOmitCommonWordsKeepsContent(t *testing.T) {
+	index := OmitCommonWords(WordIndex{
+		Title: "Desk", WordCount: 12, UniqueCount: 3,
+		Words: []WordCount{{Word: "the", Count: 9}, {Word: "archives", Count: 2}, {Word: "it's", Count: 1}},
+	})
+	if index.WordCount != 2 || index.UniqueCount != 1 || len(index.Words) != 1 || index.Words[0].Word != "archives" {
+		t.Fatalf("index %+v", index)
+	}
+}
+
 func TestMergeWordIndexesSumsCounts(t *testing.T) {
 	merged := MergeWordIndexes("All",
 		WordIndex{Words: []WordCount{{Word: "Archives", Count: 2}, {Word: "desk", Count: 1}}},

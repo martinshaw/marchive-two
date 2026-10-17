@@ -112,6 +112,17 @@ func TestPageAndCapture(t *testing.T) {
 	}
 }
 
+func TestReadingDocumentUsesArticleFont(t *testing.T) {
+	page := string(readingDocument([]byte("<p>Desk notes</p>")))
+	if !strings.Contains(page, "Iowan Old Style") || !strings.Contains(page, "<p>Desk notes</p>") {
+		t.Fatalf("page %s", page)
+	}
+	full := string(readingDocument([]byte("<html><head><title>T</title></head><body><p>Kept</p></body></html>")))
+	if !strings.Contains(full, "Iowan Old Style") || !strings.Contains(full, "<p>Kept</p>") || strings.Count(full, "<html") != 1 {
+		t.Fatalf("full %s", full)
+	}
+}
+
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
