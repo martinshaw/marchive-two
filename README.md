@@ -1,6 +1,6 @@
 # Marchive
 
-Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, or the text of a page. One Go binary runs the scheduler, the capture jobs, and the UI.
+Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, or search results from Google and DuckDuckGo. One Go binary runs the scheduler, the capture jobs, and the UI.
 
 Version 0.2.3.
 
@@ -22,8 +22,8 @@ Version 0.2.3.
 ## Requirements
 
 - macOS, Linux, or Windows
-- Go 1.24 or newer, only to build from source
-- Google Chrome, for webpage, article, and text captures
+- Go 1.24 or newer, and Node.js 22, only to build from source
+- Google Chrome, for webpage, article, text, X, Hacker News screenshot, and search captures
 
 Podcast feeds and episode files are downloaded with Go’s HTTP client. They do not open Chrome.
 
@@ -36,14 +36,15 @@ Download an archive from the [GitHub releases](https://github.com/martinshaw/mar
 ## Build
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o marchive ./cmd/marchive
+make build
 ```
+
+`make build` installs the web dependencies, builds the React page into `internal/httpapi/ui/dist`, then compiles the binary. The Go compiler embeds that page.
 
 `CGO_ENABLED=0` keeps the binary free of native library dependencies. The SQLite driver is pure Go. `-trimpath` removes local paths from the binary. `-s` drops the symbol table and `-w` drops DWARF debugging information.
 
 ```bash
 make test
-make build
 ```
 
 ## Run
@@ -76,8 +77,12 @@ Each source has a kind and a schedule.
 - **Article index.** New same-site articles from a section or homepage. An optional CSS selector picks the links. Each article can keep the same page files, including `words.json`.
 - **Podcast.** New episodes, identified by the RSS GUID, then the enclosure URL. Each episode can keep the audio file and `metadata.json`.
 - **Text extract.** Readable text and metadata when the page changes.
+- **X trending.** New posts from a trending, news, sports, entertainment, or other X page. Each post keeps its text, author, hashtags, and words, plus any images, audio, and video attached to it. Sign in with Chrome on the Marchive profile first. News, Sports, and Entertainment list topics; Marchive opens a few of those pages and saves the posts.
+- **Hacker News entry.** New stories from Newest, the front page, Best, Ask, Show, or Jobs. Each story keeps its text, comments, score, author, and word index. When the story links to a website, Marchive also saves a screenshot and the readable text of that site. The word index includes the story, the comments, and the linked site.
+- **Google search.** New organic results from a Google search address. Each result keeps its title, address, snippet, details, and word index.
+- **DuckDuckGo.** New organic results from a DuckDuckGo search address, saved the same way as Google results.
 
-For each kind, choose **All data** or the individual parts to keep. Webpage and article captures use Chrome. Podcast audio does not.
+For each kind, choose **All data** or the individual parts to keep. Webpage, article, X, Hacker News screenshot, and search captures use Chrome. Podcast audio does not. Hacker News story text and comments come from the Hacker News API and do not need Chrome unless a screenshot is selected.
 
 The archive folder defaults to `Marchive` in your home directory. The first run of an article list or podcast takes at most 20 new items. Raise “new items per run”, or pass `--max-new 0`, to take more. `0` means no limit. The shortest schedule interval is 30 seconds.
 
@@ -111,11 +116,11 @@ The service runs `marchive serve` with the current data directory. Turning both 
 
 ## Chrome
 
-Webpage, article, and text captures render the page in Chrome. On macOS, Marchive starts Chrome through Launch Services and attaches to it, so a command-line parent does not trip Chrome’s startup registration. If Chrome quits while it is starting, that capture fails once instead of launching Chrome again.
+Webpage, article, text, X, Hacker News screenshot, and search captures render the page in Chrome. On macOS, Marchive starts Chrome through Launch Services and attaches to it, so a command-line parent does not trip Chrome’s startup registration. If Chrome quits while it is starting, that capture fails once instead of launching Chrome again.
 
 If Chrome is missing, the UI can download the current stable release and show the install progress.
 
-**Sign in** opens Marchive’s own Chrome profile. Sign in to sites you already subscribe to, then quit Chrome. Later captures reuse that profile. Marchive stores the page Chrome can already open. It does not try to defeat a paywall.
+**Sign in** opens the Marchive profile stored in the app data folder. Chrome shows that profile under the name Marchive. Sign in to sites you already subscribe to, then quit Chrome. Later captures reuse that profile. Marchive stores the page Chrome can already open. It does not try to defeat a paywall.
 
 ## Data
 
@@ -133,9 +138,12 @@ That folder holds `marchive.db`, the Chrome profile, the lock, the current port,
 
 ## Command line
 
+`marchive cli-setup` asks for a fixed UI port and the login service. Open on login and restart on crash both default to yes, so the same setup works over SSH. The port is used the next time Marchive starts.
+
 ```bash
 ./marchive
 ./marchive serve
+./marchive cli-setup
 ./marchive runner start
 ./marchive runner stop
 ./marchive runner status

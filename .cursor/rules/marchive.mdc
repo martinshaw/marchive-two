@@ -1,0 +1,48 @@
+---
+description: Where Marchive code lives and how to rebuild it without searching
+alwaysApply: true
+---
+
+# Marchive
+
+cgo-free Go app. Module `github.com/martinshaw/marchive-two`. Use `CGO_ENABLED=0` and `GOTOOLCHAIN=local`.
+
+## Where to edit
+
+- `web/src/App.jsx` — state, polling, and how the screens fit together
+- `web/src/chrome.jsx` — menubar, toolbar, sidebar
+- `web/src/SourcesPane.jsx`, `CapturePane.jsx`, `ReaderPane.jsx`, `WordsPane.jsx` — one screen each
+- `web/src/rows.jsx` — table row data
+- `web/src/selection.js` — click, shift, and command selection
+- `web/src/commands.js` — toolbar and menu actions
+- `web/src/library.js` — which rows are visible, and the sidebar counts
+- `web/src/Sheets.jsx`, `web/src/AddSheet.jsx` — sheets, and the new-source wizard
+- `web/src/Grid.jsx` — tables
+- `web/src/Split.jsx` — draggable split between panes
+- `web/src/ContextMenu.jsx` — menus and clipboard
+- `web/src/Message.jsx`, `web/src/Words.jsx` — item details and word clouds
+- `internal/httpapi/static/app.css` — all UI styles, served as `/static/app.css` (Vite does not bundle it)
+- `internal/httpapi/server.go` — HTTP routes
+- `internal/service` — request behavior
+- `internal/store` — SQLite
+
+Do not read or edit `internal/httpapi/ui/dist`. Vite overwrites it.
+
+## Rebuild
+
+Run commands from the repo root. `make` from `web/` has no `build` target.
+
+- CSS only: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o marchive ./cmd/marchive`
+- JavaScript, or both: `make build`
+- The binary embeds the page, so restart after either: `pkill -x marchive`, then `./marchive serve`
+- The listen port is random. Read the log URL and tell the user. Do not use `go run`.
+
+## Checks
+
+`CGO_ENABLED=0 GOTOOLCHAIN=local go test ./internal/service/ ./internal/store/ -count=1`
+
+Skip `go test ./internal/browser/` unless the change is in that package. It launches Chrome.
+
+## Live data
+
+The app uses `~/Library/Application Support/Marchive`. Do not save Settings, add a source, or confirm Remove unless asked. Cancel those sheets.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,8 @@ type Options struct {
 	Screenshot bool
 	MHTML      bool
 	Scroll     bool
+	// Headed opens a visible window. X answers HTTP 403 to the headless window.
+	Headed bool
 }
 
 // Document is the rendered page Chrome returned.
@@ -75,6 +78,10 @@ func (c *Client) BeginSignIn() error {
 		c.mu.Unlock()
 		return err
 	}
+	if err := prepareProfile(c.profile); err != nil {
+		c.mu.Unlock()
+		return err
+	}
 	c.signingIn = true
 	c.mu.Unlock()
 
@@ -119,10 +126,10 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 		c.mu.Unlock()
 	}()
 
-	fetchCtx, cancel := context.WithTimeout(ctx, 75*time.Second)
+	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	allocCtx, allocCancel, err := c.allocator(fetchCtx, bin)
+	allocCtx, allocCancel, err := c.allocator(fetchCtx, bin, opt.Headed)
 	if err != nil {
 		return nil, err
 	}
@@ -131,19 +138,24 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 	defer taskCancel()
 
 	var html, finalURL string
+	load := &pageLoad{}
 	actions := []chromedp.Action{
 		network.Enable(),
 		network.SetBlockedURLs(blockedURLPatterns),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			load.listen(ctx)
+			return nil
+		}),
 		chromedp.Navigate(rawURL),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(700 * time.Millisecond),
 		chromedp.Evaluate(dismissCookieJS, nil),
+		chromedp.ActionFunc(func(ctx context.Context) error { return load.wait(ctx) }),
 	}
 	if opt.Scroll {
 		actions = append(actions,
 			chromedp.Evaluate(scrollJS, nil),
-			chromedp.Sleep(250*time.Millisecond),
+			chromedp.ActionFunc(func(ctx context.Context) error { return load.wait(ctx) }),
 			chromedp.Evaluate(scrollJS, nil),
+			chromedp.ActionFunc(func(ctx context.Context) error { return load.wait(ctx) }),
 			chromedp.Evaluate(`window.scrollTo(0, 0)`, nil),
 		)
 	}
@@ -162,11 +174,18 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 	doc.HTML = html
 	if opt.MHTML {
 		if err := chromedp.Run(taskCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-			data, err := page.CaptureSnapshot().WithFormat(page.CaptureSnapshotFormatMhtml).Do(ctx)
-			if err != nil {
-				return err
+			archived, err := freezePage(ctx, finalURL)
+			if err != nil || !strings.Contains(archived, "multipart/related") {
+				data, snapErr := page.CaptureSnapshot().WithFormat(page.CaptureSnapshotFormatMhtml).Do(ctx)
+				if snapErr != nil {
+					if err != nil {
+						return err
+					}
+					return snapErr
+				}
+				archived = data
 			}
-			doc.MHTML = data
+			doc.MHTML = archived
 			return nil
 		})); err != nil {
 			return nil, err

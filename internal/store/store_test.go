@@ -162,6 +162,38 @@ func TestFailInterruptedAndSettings(t *testing.T) {
 	}
 }
 
+func TestOnceScheduleTurnsOff(t *testing.T) {
+	st := openTest(t)
+	_, scheduleID, err := st.CreateSourceWithSchedule(Source{
+		Name: "Page", URL: "https://example.com", Provider: "webpage",
+	}, Schedule{IntervalSeconds: 0, DownloadLocation: t.TempDir(), Enabled: true, MaxNew: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateRun(scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := st.CompleteRun(run.ID, scheduleID, StatusSucceeded, "", "once", time.Now())
+	if err != nil || !updated {
+		t.Fatalf("complete = %v %v", updated, err)
+	}
+	got, err := st.GetSchedule(scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled || got.NextRunAt != nil || got.EveryUnit() != "once" {
+		t.Fatalf("schedule = %+v", got)
+	}
+	due, err := st.DueSchedules(time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("once schedule still due: %+v", due)
+	}
+}
+
 func TestLatestHash(t *testing.T) {
 	st := openTest(t)
 	sourceID, _, err := st.CreateSourceWithSchedule(Source{
@@ -179,6 +211,38 @@ func TestLatestHash(t *testing.T) {
 	hash, ok, err := st.LatestContentHash(sourceID, "snapshot")
 	if err != nil || !ok || hash != "bbb" {
 		t.Fatalf("hash = %q ok=%v err=%v", hash, ok, err)
+	}
+}
+
+func TestSetItemsRead(t *testing.T) {
+	st := openTest(t)
+	sourceID, _, err := st.CreateSourceWithSchedule(Source{
+		Name: "Desk", URL: "https://example.com", Provider: "webpage",
+	}, Schedule{IntervalSeconds: 60, DownloadLocation: t.TempDir(), Enabled: true, MaxNew: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.InsertItem(Item{SourceID: sourceID, IdentityKey: "one", Kind: "snapshot", Status: StatusSucceeded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := st.GetItem(id)
+	if err != nil || !item.ReadAt.IsZero() {
+		t.Fatalf("new item readAt %v %v", item.ReadAt, err)
+	}
+	if err := st.SetItemsRead([]int64{id}, true); err != nil {
+		t.Fatal(err)
+	}
+	item, err = st.GetItem(id)
+	if err != nil || item.ReadAt.IsZero() {
+		t.Fatalf("read %v %v", item.ReadAt, err)
+	}
+	if err := st.SetItemsRead([]int64{id}, false); err != nil {
+		t.Fatal(err)
+	}
+	item, err = st.GetItem(id)
+	if err != nil || !item.ReadAt.IsZero() {
+		t.Fatalf("unread %v %v", item.ReadAt, err)
 	}
 }
 

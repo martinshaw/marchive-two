@@ -35,7 +35,7 @@ func (e *startError) Unwrap() error { return e.err }
 
 func (e *startError) NoRetry() bool { return true }
 
-func (c *Client) allocator(ctx context.Context, bin string) (context.Context, context.CancelFunc, error) {
+func (c *Client) allocator(ctx context.Context, bin string, headed bool) (context.Context, context.CancelFunc, error) {
 	var last error
 	for attempt := 0; attempt < 2; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -48,7 +48,7 @@ func (c *Client) allocator(ctx context.Context, bin string) (context.Context, co
 		if err != nil {
 			return nil, nil, err
 		}
-		out, err := exec.Command("open", chromeArgs(bin, c.profile, port)...).CombinedOutput()
+		out, err := exec.Command("open", chromeArgs(bin, c.profile, port, headed)...).CombinedOutput()
 		if err != nil {
 			msg := strings.TrimSpace(string(out))
 			if msg == "" {
@@ -80,12 +80,18 @@ func (c *Client) allocator(ctx context.Context, bin string) (context.Context, co
 	return nil, nil, &startError{err: last}
 }
 
-func chromeArgs(bin, profile string, port int) []string {
-	return []string{
+func chromeArgs(bin, profile string, port int, headed bool) []string {
+	args := []string{
 		"-n", "-a", chromeApp(bin), "--args",
 		"--user-data-dir=" + profile,
 		"--remote-debugging-port=" + strconv.Itoa(port),
-		"--headless=new",
+	}
+	if headed {
+		args = append(args, "--profile-directory=Default")
+	} else {
+		args = append(args, "--headless=new")
+	}
+	args = append(args,
 		"--mute-audio",
 		"--window-size=1280,1800",
 		"--no-first-run",
@@ -96,13 +102,15 @@ func chromeArgs(bin, profile string, port int) []string {
 		"--disable-crash-reporter",
 		"--use-mock-keychain",
 		"--password-store=basic",
-	}
+	)
+	return args
 }
 
 func startVisibleChrome(ctx context.Context, bin, profile string) *exec.Cmd {
 	return exec.CommandContext(ctx, "open",
 		"-W", "-n", "-a", chromeApp(bin), "--args",
 		"--user-data-dir="+profile,
+		"--profile-directory=Default",
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--new-window",

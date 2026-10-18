@@ -2,6 +2,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -45,6 +46,7 @@ type ScheduleInput struct {
 	MaxNew           *int    `json:"maxNew"`
 	Enabled          *bool   `json:"enabled"`
 	Capture          *string `json:"capture"`
+	LinkSelector     *string `json:"linkSelector"`
 }
 
 // SettingsInput changes concurrency, the UI port, and the login service.
@@ -188,7 +190,7 @@ func (s *Service) CreateSource(in SourceInput) (int64, int64, error) {
 		return 0, 0, &Error{Status: 400, Msg: err.Error()}
 	}
 	if !provider.ValidKind(in.Provider) {
-		return 0, 0, &Error{Status: 400, Msg: "choose a webpage, article index, podcast, or text extract"}
+		return 0, 0, &Error{Status: 400, Msg: provider.KindHint()}
 	}
 	if err := provider.ValidateSelector(in.LinkSelector); err != nil {
 		return 0, 0, &Error{Status: 400, Msg: "link selector is not valid CSS"}
@@ -200,7 +202,7 @@ func (s *Service) CreateSource(in SourceInput) (int64, int64, error) {
 	if err != nil {
 		return 0, 0, &Error{Status: 400, Msg: err.Error()}
 	}
-	if in.IntervalSeconds < 30 {
+	if in.IntervalSeconds != 0 && in.IntervalSeconds < 30 {
 		return 0, 0, &Error{Status: 400, Msg: "the interval must be at least 30 seconds"}
 	}
 	if in.MaxNew < 0 || in.MaxNew > 1000 {
@@ -239,12 +241,46 @@ func (s *Service) CreateSource(in SourceInput) (int64, int64, error) {
 	return sourceID, scheduleID, nil
 }
 
-func (s *Service) DeleteSource(id int64) error {
-	if err := s.Store.DeleteSource(id); err != nil {
-		return err
+// SourceCheck is the result of asking whether an address suits a source kind.
+type SourceCheck struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+}
+
+// SetItemsRead marks the given items read or unread.
+func (s *Service) SetItemsRead(ids []int64, read bool) error {
+	if len(ids) == 0 || len(ids) > 500 {
+		return &Error{Status: 400, Msg: "choose an item"}
 	}
-	s.kick()
-	return nil
+	seen := map[int64]bool{}
+	clean := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id < 1 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return &Error{Status: 400, Msg: "choose an item"}
+	}
+	return s.Store.SetItemsRead(clean, read)
+}
+
+// CheckSource fetches rawURL and reports whether it can be captured as kind.
+func (s *Service) CheckSource(ctx context.Context, rawURL, kind string) (SourceCheck, error) {
+	normalized, err := provider.NormalizeURL(rawURL)
+	if err != nil {
+		return SourceCheck{}, &Error{Status: 400, Msg: err.Error()}
+	}
+	if !provider.ValidKind(kind) {
+		return SourceCheck{}, &Error{Status: 400, Msg: provider.KindHint()}
+	}
+	title, err := provider.CheckAddress(ctx, kind, normalized)
+	if err != nil {
+		return SourceCheck{}, &Error{Status: 400, Msg: err.Error()}
+	}
+	return SourceCheck{URL: normalized, Title: title}, nil
 }
 
 func (s *Service) UpdateSchedule(id int64, in ScheduleInput) error {
@@ -253,7 +289,7 @@ func (s *Service) UpdateSchedule(id int64, in ScheduleInput) error {
 		return err
 	}
 	if in.IntervalSeconds != nil {
-		if *in.IntervalSeconds < 30 {
+		if *in.IntervalSeconds != 0 && *in.IntervalSeconds < 30 {
 			return &Error{Status: 400, Msg: "the interval must be at least 30 seconds"}
 		}
 		current.IntervalSeconds = *in.IntervalSeconds
@@ -283,15 +319,16 @@ func (s *Service) UpdateSchedule(id int64, in ScheduleInput) error {
 			return err
 		}
 	}
-	if err := s.Store.UpdateSchedule(current.Schedule); err != nil {
-		return err
+	if in.LinkSelector != nil && current.Source.Provider == provider.KindArticles {
+		selector := strings.TrimSpace(*in.LinkSelector)
+		if err := provider.ValidateSelector(selector); err != nil {
+			return &Error{Status: 400, Msg: "link selector is not valid CSS"}
+		}
+		if err := s.Store.SetSourceLinkSelector(current.SourceID, selector); err != nil {
+			return err
+		}
 	}
-	s.kick()
-	return nil
-}
-
-func (s *Service) DeleteSchedule(id int64) error {
-	if err := s.Store.DeleteSchedule(id); err != nil {
+	if err := s.Store.UpdateSchedule(current.Schedule); err != nil {
 		return err
 	}
 	s.kick()

@@ -66,6 +66,33 @@ func TestCreateSourceValidates(t *testing.T) {
 	if err := svc.UpdateSettings(SettingsInput{ListenPort: &zero}); err != nil {
 		t.Fatal(err)
 	}
+	selector := `div[data-testid="newswire-blocks-container"] a`
+	_, articleSchedule, err := svc.CreateSource(SourceInput{
+		URL:              "https://www.rockstargames.com/newswire",
+		Provider:         "article_index",
+		LinkSelector:     "main a",
+		IntervalSeconds:  3600,
+		DownloadLocation: t.TempDir(),
+		MaxNew:           5,
+		Enabled:          &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateSchedule(articleSchedule, ScheduleInput{LinkSelector: &selector}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := st.GetSchedule(articleSchedule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Source.LinkSelector != selector {
+		t.Fatalf("selector %q", detail.Source.LinkSelector)
+	}
+	badSelector := "div[a"
+	if err := svc.UpdateSchedule(articleSchedule, ScheduleInput{LinkSelector: &badSelector}); err == nil {
+		t.Fatal("expected an invalid selector error")
+	}
 	_, err = svc.RunNow(scheduleID)
 	var se *Error
 	if !errors.As(err, &se) || se.Status != 409 {

@@ -1,5 +1,10 @@
 package provider
 
+import (
+	"net/url"
+	"strings"
+)
+
 // commonWords are English function words. They stay in words.json and are
 // left out of clouds and trends unless the reader asks for them.
 var commonWords = map[string]bool{
@@ -38,7 +43,84 @@ func OmitCommonWords(index WordIndex) WordIndex {
 	kept := make([]WordCount, 0, len(index.Words))
 	total := 0
 	for _, item := range index.Words {
-		if commonWords[item.Word] {
+		if commonWords[strings.ToLower(item.Word)] {
+			continue
+		}
+		kept = append(kept, item)
+		total += item.Count
+	}
+	index.Words = kept
+	index.WordCount = total
+	index.UniqueCount = len(kept)
+	return index
+}
+
+// urlSkip are host labels that name the address itself, not the site.
+var urlSkip = map[string]bool{
+	"www": true, "www2": true, "m": true, "mobile": true, "amp": true,
+	"feed": true, "feeds": true, "rss": true, "cdn": true, "static": true,
+	"assets": true, "media": true, "img": true, "images": true,
+	"com": true, "org": true, "net": true, "uk": true, "io": true, "co": true,
+	"gov": true, "edu": true, "info": true, "html": true, "htm": true,
+	"php": true, "asp": true, "aspx": true, "jp": true, "de": true, "fr": true,
+	"au": true, "ca": true, "us": true, "nz": true, "eu": true,
+}
+
+// URLWords returns the site words in a URL host. www.theguardian.com yields
+// theguardian and guardian. Path and query words stay, because those are the article.
+func URLWords(raw string) map[string]bool {
+	host := urlHost(raw)
+	if host == "" {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, label := range strings.Split(host, ".") {
+		if urlSkip[label] {
+			continue
+		}
+		for _, word := range tokenize(label) {
+			if len(word) < 2 || urlSkip[word] {
+				continue
+			}
+			out[word] = true
+			if strings.HasPrefix(word, "the") && len(word) > 5 {
+				rest := word[3:]
+				if !urlSkip[rest] && hasLetterOrNumber(rest) {
+					out[rest] = true
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func urlHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" {
+		parsed, err = url.Parse("https://" + raw)
+		if err != nil {
+			return ""
+		}
+	}
+	return strings.ToLower(parsed.Hostname())
+}
+
+// OmitListedWords drops the named words and recounts what remains.
+func OmitListedWords(index WordIndex, drop map[string]bool) WordIndex {
+	if len(drop) == 0 {
+		return index
+	}
+	kept := make([]WordCount, 0, len(index.Words))
+	total := 0
+	for _, item := range index.Words {
+		if drop[strings.ToLower(item.Word)] {
 			continue
 		}
 		kept = append(kept, item)

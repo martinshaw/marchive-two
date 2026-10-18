@@ -171,6 +171,8 @@ func fileKind(name string) string {
 		return "image"
 	case ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".opus":
 		return "audio"
+	case ".mp4", ".webm", ".mov", ".m4v":
+		return "video"
 	case ".mhtml", ".mht":
 		return "mhtml"
 	default:
@@ -184,22 +186,26 @@ func fileRank(name string) int {
 		return 0
 	case "text.txt":
 		return 1
-	case "page.html":
+	case "comments.txt":
 		return 2
-	case "screenshot.jpg":
+	case "site.txt":
 		return 3
-	case "metadata.json":
+	case "page.html":
 		return 4
-	case "words.json":
+	case "screenshot.jpg":
 		return 5
+	case "metadata.json":
+		return 6
+	case "words.json":
+		return 7
 	default:
 		switch fileKind(name) {
-		case "audio":
-			return 6
-		case "mhtml":
-			return 7
-		default:
+		case "audio", "video", "image":
 			return 8
+		case "mhtml":
+			return 9
+		default:
+			return 10
 		}
 	}
 }

@@ -66,8 +66,11 @@ func (s Schedule) EveryCount() int {
 	return s.IntervalSeconds
 }
 
-// EveryUnit is hours, minutes, or seconds.
+// EveryUnit is hours, minutes, seconds, or once.
 func (s Schedule) EveryUnit() string {
+	if s.IntervalSeconds == 0 {
+		return "once"
+	}
 	if s.IntervalSeconds%3600 == 0 && s.IntervalSeconds >= 3600 {
 		return "hours"
 	}
@@ -120,6 +123,8 @@ type Item struct {
 	RetryCount       int       `json:"retryCount"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	ReadAt           time.Time `json:"-"`
+	Read             bool      `json:"read"`
 }
 
 // Store is a single SQLite database.
@@ -162,7 +167,10 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
-	return s.ensureColumn("sources", "capture", "TEXT NOT NULL DEFAULT ''")
+	if err := s.ensureColumn("sources", "capture", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return s.ensureColumn("items", "read_at", "TEXT")
 }
 
 func (s *Store) ensureColumn(table, column, decl string) error {
@@ -242,6 +250,7 @@ CREATE TABLE IF NOT EXISTS items (
   retry_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  read_at TEXT,
   UNIQUE(source_id, identity_key)
 );
 
@@ -342,6 +351,21 @@ func (s *Store) SetSourceName(id int64, name string) error {
 	return err
 }
 
+func (s *Store) SetSourceLinkSelector(id int64, selector string) error {
+	res, err := s.db.Exec(`UPDATE sources SET link_selector = ?, updated_at = ? WHERE id = ?`, selector, fmtTime(time.Now().UTC()), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) SetSourceCapture(id int64, capture string) error {
 	res, err := s.db.Exec(`UPDATE sources SET capture = ?, updated_at = ? WHERE id = ?`, capture, fmtTime(time.Now().UTC()), id)
 	if err != nil {
@@ -392,6 +416,97 @@ func (s *Store) UpdateSchedule(sch Schedule) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) ActiveRunIDs(sourceID, scheduleID int64) ([]int64, error) {
+	q := `SELECT runs.id FROM runs JOIN schedules ON schedules.id = runs.schedule_id WHERE runs.status IN (?, ?)`
+	args := []any{StatusQueued, StatusRunning}
+	if sourceID > 0 {
+		q += ` AND schedules.source_id = ?`
+		args = append(args, sourceID)
+	}
+	if scheduleID > 0 {
+		q += ` AND runs.schedule_id = ?`
+		args = append(args, scheduleID)
+	}
+	q += ` ORDER BY runs.id`
+	return s.queryIDs(q, args...)
+}
+
+func (s *Store) queryIDs(q string, args ...any) ([]int64, error) {
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (s *Store) ItemDirs(clause string, args ...any) ([]string, error) {
+	q := `SELECT DISTINCT download_location FROM items WHERE download_location != ''`
+	if clause != "" {
+		q += ` AND (` + clause + `)`
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var dirs []string
+	for rows.Next() {
+		var dir string
+		if err := rows.Scan(&dir); err != nil {
+			return nil, err
+		}
+		dirs = append(dirs, dir)
+	}
+	return dirs, rows.Err()
+}
+
+func (s *Store) DeleteItem(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) DeleteRun(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM items WHERE run_id = ?`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM runs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeleteSchedule(id int64) error {
@@ -465,6 +580,12 @@ func (s *Store) AdvanceSchedule(id int64, now time.Time) error {
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	if interval == 0 {
+		_, err = s.db.Exec(`
+			UPDATE schedules SET last_run_at = ?, next_run_at = NULL, enabled = 0, updated_at = ? WHERE id = ?`,
+			fmtTime(now.UTC()), fmtTime(now.UTC()), id)
 		return err
 	}
 	if interval < 1 {
@@ -599,14 +720,22 @@ func (s *Store) CompleteRun(runID, scheduleID int64, status, errMsg, note string
 			return false, err
 		}
 		if err == nil {
-			if interval < 1 {
-				interval = 1
-			}
-			next := now.Add(time.Duration(interval) * time.Second)
-			if _, err := tx.Exec(`
-				UPDATE schedules SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?`,
-				fmtTime(now), fmtTime(next), fmtTime(now), scheduleID); err != nil {
-				return false, err
+			if interval == 0 {
+				if _, err := tx.Exec(`
+					UPDATE schedules SET last_run_at = ?, next_run_at = NULL, enabled = 0, updated_at = ? WHERE id = ?`,
+					fmtTime(now), fmtTime(now), scheduleID); err != nil {
+					return false, err
+				}
+			} else {
+				if interval < 1 {
+					interval = 1
+				}
+				next := now.Add(time.Duration(interval) * time.Second)
+				if _, err := tx.Exec(`
+					UPDATE schedules SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?`,
+					fmtTime(now), fmtTime(next), fmtTime(now), scheduleID); err != nil {
+					return false, err
+				}
 			}
 		}
 	}
@@ -733,7 +862,7 @@ func (s *Store) LatestContentHash(sourceID int64, kind string) (string, bool, er
 func (s *Store) GetItem(id int64) (Item, error) {
 	row := s.db.QueryRow(`
 		SELECT id, source_id, run_id, identity_key, kind, title, url, status, error,
-		       download_location, content_hash, retry_count, created_at, updated_at
+		       download_location, content_hash, retry_count, created_at, updated_at, read_at
 		FROM items WHERE id = ?`, id)
 	item, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -742,21 +871,86 @@ func (s *Store) GetItem(id int64) (Item, error) {
 	return item, err
 }
 
+// LocatedItem is a captured item and the source name used to group its files.
+type LocatedItem struct {
+	ID               int64
+	SourceID         int64
+	SourceName       string
+	DownloadLocation string
+}
+
+func (s *Store) ListLocatedItems() ([]LocatedItem, error) {
+	rows, err := s.db.Query(`
+		SELECT items.id, items.source_id, sources.name, items.download_location
+		FROM items
+		JOIN sources ON sources.id = items.source_id
+		WHERE items.download_location != ''
+		ORDER BY items.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LocatedItem
+	for rows.Next() {
+		var item LocatedItem
+		if err := rows.Scan(&item.ID, &item.SourceID, &item.SourceName, &item.DownloadLocation); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SourceArchiveRoots() (map[int64][]string, error) {
+	rows, err := s.db.Query(`SELECT source_id, download_location FROM schedules WHERE download_location != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var dir string
+		if err := rows.Scan(&id, &dir); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], dir)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetItemDownloadLocation(id int64, dir string) error {
+	res, err := s.db.Exec(`UPDATE items SET download_location = ?, updated_at = ? WHERE id = ?`, dir, fmtTime(time.Now().UTC()), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // WordItem is an archived item that may have a words.json file, with the capture it belongs to.
 type WordItem struct {
 	ID               int64
 	RunID            int64
 	Title            string
+	URL              string
 	DownloadLocation string
 	RunAt            time.Time
 	SourceName       string
+	SourceURL        string
 	Provider         string
 }
 
 func (s *Store) ListWordItems() ([]WordItem, error) {
 	rows, err := s.db.Query(`
-		SELECT items.id, items.run_id, items.title, items.download_location,
-		       runs.created_at, sources.name, sources.provider
+		SELECT items.id, items.run_id, items.title, items.url, items.download_location,
+		       runs.created_at, sources.name, sources.url, sources.provider
 		FROM items
 		JOIN runs ON runs.id = items.run_id
 		JOIN schedules ON schedules.id = runs.schedule_id
@@ -771,7 +965,7 @@ func (s *Store) ListWordItems() ([]WordItem, error) {
 	for rows.Next() {
 		var item WordItem
 		var created string
-		if err := rows.Scan(&item.ID, &item.RunID, &item.Title, &item.DownloadLocation, &created, &item.SourceName, &item.Provider); err != nil {
+		if err := rows.Scan(&item.ID, &item.RunID, &item.Title, &item.URL, &item.DownloadLocation, &created, &item.SourceName, &item.SourceURL, &item.Provider); err != nil {
 			return nil, err
 		}
 		item.RunAt = mustTime(created)
@@ -792,7 +986,7 @@ func (s *Store) ListItemsByRunIDs(ids []int64) ([]Item, error) {
 	}
 	rows, err := s.db.Query(`
 		SELECT id, source_id, run_id, identity_key, kind, title, url, status, error,
-		       download_location, content_hash, retry_count, created_at, updated_at
+		       download_location, content_hash, retry_count, created_at, updated_at, read_at
 		FROM items WHERE run_id IN (`+strings.Join(placeholders, ",")+`)
 		ORDER BY id`, args...)
 	if err != nil {
@@ -1014,14 +1208,39 @@ func scanRunDetail(sc scanner) (RunDetail, error) {
 	return d, nil
 }
 
+// SetItemsRead records or clears the time each item was read.
+func (s *Store) SetItemsRead(ids []int64, read bool) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	now := any(nil)
+	if read {
+		now = fmtTime(time.Now().UTC())
+		args = append(args, now)
+	}
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	q := `UPDATE items SET read_at = NULL WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	if read {
+		q = `UPDATE items SET read_at = ? WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	}
+	_, err := s.db.Exec(q, args...)
+	return err
+}
+
 func scanItem(sc scanner) (Item, error) {
 	var item Item
 	var runID sql.NullInt64
 	var created, updated string
+	var readAt sql.NullString
 	err := sc.Scan(
 		&item.ID, &item.SourceID, &runID, &item.IdentityKey, &item.Kind, &item.Title, &item.URL,
 		&item.Status, &item.Error, &item.DownloadLocation, &item.ContentHash, &item.RetryCount,
-		&created, &updated,
+		&created, &updated, &readAt,
 	)
 	if err != nil {
 		return Item{}, err
@@ -1031,6 +1250,10 @@ func scanItem(sc scanner) (Item, error) {
 	}
 	item.CreatedAt = mustTime(created)
 	item.UpdatedAt = mustTime(updated)
+	if when := parseTime(readAt); when != nil {
+		item.ReadAt = *when
+		item.Read = true
+	}
 	return item, nil
 }
 

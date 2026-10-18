@@ -18,6 +18,28 @@ func TestOmitCommonWordsKeepsContent(t *testing.T) {
 	if index.WordCount != 2 || index.UniqueCount != 1 || len(index.Words) != 1 || index.Words[0].Word != "archives" {
 		t.Fatalf("index %+v", index)
 	}
+	kept := OmitCommonWords(WordIndex{Words: []WordCount{{Word: "The", Count: 4}, {Word: "Guardian", Count: 2}}})
+	if countIn(kept, "The") != 0 || countIn(kept, "Guardian") != 2 {
+		t.Fatalf("kept %+v", kept)
+	}
+	dropped := OmitListedWords(kept, URLWords("https://www.theguardian.com/uk"))
+	if countIn(dropped, "Guardian") != 0 {
+		t.Fatalf("dropped %+v", dropped)
+	}
+}
+
+func TestURLWordsSplitsSiteHost(t *testing.T) {
+	words := URLWords("https://www.theguardian.com/uk/world/story")
+	if !words["theguardian"] || !words["guardian"] || words["www"] || words["com"] || words["world"] || words["story"] {
+		t.Fatalf("words %v", words)
+	}
+	bbc := URLWords("https://www.bbc.co.uk/news")
+	if !bbc["bbc"] || bbc["co"] || bbc["uk"] || bbc["news"] {
+		t.Fatalf("bbc %v", bbc)
+	}
+	if URLWords("") != nil || URLWords("not a url") != nil {
+		t.Fatal("expected no words")
+	}
 }
 
 func TestMergeWordIndexesSumsCounts(t *testing.T) {
@@ -25,11 +47,18 @@ func TestMergeWordIndexesSumsCounts(t *testing.T) {
 		WordIndex{Words: []WordCount{{Word: "Archives", Count: 2}, {Word: "desk", Count: 1}}},
 		WordIndex{Words: []WordCount{{Word: "archives", Count: 1}}},
 	)
-	if merged.Title != "All" || merged.WordCount != 4 || merged.UniqueCount != 2 {
+	if merged.Title != "All" || merged.WordCount != 4 || merged.UniqueCount != 3 {
 		t.Fatalf("merged %+v", merged)
 	}
-	if merged.Words[0].Word != "archives" || merged.Words[0].Count != 3 {
+	if countIn(merged, "Archives") != 2 || countIn(merged, "archives") != 1 || countIn(merged, "desk") != 1 {
 		t.Fatalf("order %+v", merged.Words)
+	}
+}
+
+func TestBuildWordIndexKeepsCase(t *testing.T) {
+	index := BuildWordIndex("Guardian", "The Guardian and the guardian")
+	if countIn(index, "Guardian") != 2 || countIn(index, "guardian") != 1 || countIn(index, "The") != 1 || countIn(index, "the") != 1 {
+		t.Fatalf("index %+v", index)
 	}
 }
 
@@ -54,7 +83,7 @@ func TestWordIndexSkipsChrome(t *testing.T) {
 	for _, word := range index.Words {
 		got[word.Word] = word.Count
 	}
-	for _, word := range []string{"readable", "sentence", "archives", "desk", "notes"} {
+	for _, word := range []string{"Readable", "sentence", "archives", "Desk", "notes"} {
 		if got[word] == 0 {
 			t.Fatalf("missing %s in %#v body %q", word, got, body)
 		}
@@ -99,12 +128,19 @@ func TestSnapshotWritesWordIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
+	if len(entries) != 1 {
 		t.Fatalf("dirs %d", len(entries))
 	}
+	captures, err := os.ReadDir(filepath.Join(req.Schedule.DownloadLocation, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(captures) != 2 {
+		t.Fatalf("captures %d", len(captures))
+	}
 	indexes := 0
-	for _, entry := range entries {
-		raw, err := os.ReadFile(filepath.Join(req.Schedule.DownloadLocation, entry.Name(), "words.json"))
+	for _, entry := range captures {
+		raw, err := os.ReadFile(filepath.Join(req.Schedule.DownloadLocation, entries[0].Name(), entry.Name(), "words.json"))
 		if err != nil {
 			continue
 		}
@@ -124,22 +160,34 @@ func TestSnapshotWritesWordIndex(t *testing.T) {
 
 func readWordIndex(t *testing.T, dir string) WordIndex {
 	t.Helper()
-	entries, err := os.ReadDir(dir)
+	var raw []byte
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Name() != "words.json" || raw != nil {
+			return err
+		}
+		raw, err = os.ReadFile(path)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("dirs %d", len(entries))
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, entries[0].Name(), "words.json"))
-	if err != nil {
-		t.Fatal(err)
+	if raw == nil {
+		t.Fatal("words.json not found")
 	}
 	var index WordIndex
 	if err := json.Unmarshal(raw, &index); err != nil {
 		t.Fatal(err)
 	}
 	return index
+}
+
+func countIn(index WordIndex, word string) int {
+	for _, item := range index.Words {
+		if item.Word == word {
+			return item.Count
+		}
+	}
+	return 0
 }
 
 func hasWord(index WordIndex, word string) bool {
@@ -167,7 +215,7 @@ func TestArticleCaptureWritesWordIndex(t *testing.T) {
 	if err := json.Unmarshal(raw, &index); err != nil {
 		t.Fatal(err)
 	}
-	if index.Title != "Desk notes" || !hasWord(index, "readable") {
+	if index.Title != "Desk notes" || !hasWord(index, "Readable") {
 		t.Fatalf("index %+v", index)
 	}
 }

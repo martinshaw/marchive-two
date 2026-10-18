@@ -19,8 +19,13 @@ type SavedMeta struct {
 	CanonicalURL string   `json:"canonicalUrl,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Authors      []string `json:"authors,omitempty"`
+	Handle       string   `json:"handle,omitempty"`
+	Hashtags     []string `json:"hashtags,omitempty"`
+	Media        []string `json:"media,omitempty"`
 	Published    string   `json:"published,omitempty"`
 	SiteName     string   `json:"siteName,omitempty"`
+	Query        string   `json:"query,omitempty"`
+	Rank         int      `json:"rank,omitempty"`
 	Provider     string   `json:"provider"`
 	Extractor    string   `json:"extractor"`
 	ContentHash  string   `json:"contentHash"`

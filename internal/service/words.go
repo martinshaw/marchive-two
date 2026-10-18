@@ -33,8 +33,9 @@ type WordCapture struct {
 }
 
 // ItemWords reads the word index saved with one capture item.
-// keepCommon leaves function words in the cloud. The default omits them.
-func (s *Service) ItemWords(id int64, keepCommon bool) (WordCloud, error) {
+// keepCommon leaves function words in the cloud. keepURL leaves site-name words from the address.
+// The default omits both.
+func (s *Service) ItemWords(id int64, keepCommon, keepURL bool) (WordCloud, error) {
 	item, err := s.Store.GetItem(id)
 	if err != nil {
 		return WordCloud{}, err
@@ -43,11 +44,15 @@ func (s *Service) ItemWords(id int64, keepCommon bool) (WordCloud, error) {
 	if err != nil {
 		return WordCloud{}, err
 	}
-	return cloudFrom(omitUnless(index, keepCommon), item.RunID, item.ID, 0), nil
+	urls := []string{item.URL}
+	if src, err := s.Store.GetSource(item.SourceID); err == nil {
+		urls = append(urls, src.URL)
+	}
+	return cloudFrom(filterWords(index, keepCommon, keepURL, urls), item.RunID, item.ID, 0), nil
 }
 
 // RunWords adds up words.json for every item in one capture.
-func (s *Service) RunWords(id int64, keepCommon bool) (WordCloud, error) {
+func (s *Service) RunWords(id int64, keepCommon, keepURL bool) (WordCloud, error) {
 	detail, err := s.Store.GetRunDetail(id)
 	if err != nil {
 		return WordCloud{}, err
@@ -57,7 +62,9 @@ func (s *Service) RunWords(id int64, keepCommon bool) (WordCloud, error) {
 		return WordCloud{}, err
 	}
 	var parts []provider.WordIndex
+	urls := []string{detail.SourceURL}
 	for _, item := range items {
+		urls = append(urls, item.URL)
 		index, err := s.loadWords(item.DownloadLocation, item.Title)
 		if err != nil || len(index.Words) == 0 {
 			continue
@@ -68,13 +75,13 @@ func (s *Service) RunWords(id int64, keepCommon bool) (WordCloud, error) {
 	if title == "" {
 		title = "Capture"
 	}
-	merged := omitUnless(provider.MergeWordIndexes(title, parts...), keepCommon)
+	merged := filterWords(provider.MergeWordIndexes(title, parts...), keepCommon, keepURL, urls)
 	cloud := cloudFrom(merged, id, 0, len(parts))
 	return cloud, nil
 }
 
 // WordTimeline adds up every saved word index and keeps each capture's counts over time.
-func (s *Service) WordTimeline(keepCommon bool) (WordCloud, error) {
+func (s *Service) WordTimeline(keepCommon, keepURL bool) (WordCloud, error) {
 	items, err := s.Store.ListWordItems()
 	if err != nil {
 		return WordCloud{}, err
@@ -83,6 +90,7 @@ func (s *Service) WordTimeline(keepCommon bool) (WordCloud, error) {
 		at       time.Time
 		name     string
 		provider string
+		urls     []string
 		parts    []provider.WordIndex
 	}
 	order := []int64{}
@@ -94,10 +102,11 @@ func (s *Service) WordTimeline(keepCommon bool) (WordCloud, error) {
 		}
 		current := groups[item.RunID]
 		if current == nil {
-			current = &group{at: item.RunAt, name: item.SourceName, provider: item.Provider}
+			current = &group{at: item.RunAt, name: item.SourceName, provider: item.Provider, urls: []string{item.SourceURL}}
 			groups[item.RunID] = current
 			order = append(order, item.RunID)
 		}
+		current.urls = append(current.urls, item.URL)
 		current.parts = append(current.parts, index)
 	}
 	var all []provider.WordIndex
@@ -109,7 +118,7 @@ func (s *Service) WordTimeline(keepCommon bool) (WordCloud, error) {
 		if name == "" {
 			name = "Capture"
 		}
-		merged := omitUnless(provider.MergeWordIndexes(name, current.parts...), keepCommon)
+		merged := filterWords(provider.MergeWordIndexes(name, current.parts...), keepCommon, keepURL, current.urls)
 		if merged.WordCount == 0 {
 			continue
 		}
@@ -176,11 +185,20 @@ func (s *Service) loadWords(dir, title string) (provider.WordIndex, error) {
 	return index, nil
 }
 
-func omitUnless(index provider.WordIndex, keepCommon bool) provider.WordIndex {
-	if keepCommon {
+func filterWords(index provider.WordIndex, keepCommon, keepURL bool, urls []string) provider.WordIndex {
+	if !keepCommon {
+		index = provider.OmitCommonWords(index)
+	}
+	if keepURL {
 		return index
 	}
-	return provider.OmitCommonWords(index)
+	drop := map[string]bool{}
+	for _, raw := range urls {
+		for word := range provider.URLWords(raw) {
+			drop[word] = true
+		}
+	}
+	return provider.OmitListedWords(index, drop)
 }
 
 func cloudFrom(index provider.WordIndex, runID, itemID int64, items int) WordCloud {

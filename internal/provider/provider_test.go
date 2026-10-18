@@ -25,6 +25,9 @@ func TestNormalizeAndLinks(t *testing.T) {
 	if !strings.HasPrefix(name, "Hello-World-") {
 		t.Fatalf("filename %s", name)
 	}
+	if SourceDirName(4, "BBC News Articles") != "4-bbc-news-articles" {
+		t.Fatalf("source dir %s", SourceDirName(4, "BBC News Articles"))
+	}
 
 	html := `<html><body>
 	  <a href="/2024/01/hello-world">Story</a>
@@ -84,7 +87,15 @@ func TestWebpageSkipsUnchanged(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("dirs %d", len(entries))
 	}
-	if _, err := os.Stat(filepath.Join(req.Schedule.DownloadLocation, entries[0].Name(), "snapshot.mhtml")); err != nil {
+	sourceDir := filepath.Join(req.Schedule.DownloadLocation, entries[0].Name())
+	captures, err := os.ReadDir(sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(captures) != 1 {
+		t.Fatalf("captures %d", len(captures))
+	}
+	if _, err := os.Stat(filepath.Join(sourceDir, captures[0].Name(), "snapshot.mhtml")); err != nil {
 		t.Fatal(err)
 	}
 	_ = st
