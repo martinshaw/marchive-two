@@ -3,4 +3,5 @@
 *.db-journal
 *.db-wal
 *.db-shm
-.DS_Store
+web/node_modules
+internal/httpapi/ui/dist

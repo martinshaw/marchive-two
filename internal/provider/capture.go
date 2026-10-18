@@ -16,6 +16,8 @@ type Capture struct {
 	Metadata   bool `json:"metadata,omitempty"`
 	Words      bool `json:"words,omitempty"`
 	Audio      bool `json:"audio,omitempty"`
+	Media      bool `json:"media,omitempty"`
+	Comments   bool `json:"comments,omitempty"`
 }
 
 func (c Capture) mode() saveMode {
@@ -26,6 +28,7 @@ func (c Capture) mode() saveMode {
 		MHTML:      c.MHTML,
 		Metadata:   c.Metadata,
 		Words:      c.Words,
+		Media:      c.Media,
 	}
 }
 
@@ -42,7 +45,7 @@ func Resolve(kind, raw string) Capture {
 // EncodeSelection stores either every part or the listed part keys.
 func EncodeSelection(kind string, all bool, selected []string) (string, error) {
 	if !ValidKind(kind) {
-		return "", errors.New("choose a webpage, article index, podcast, or text extract")
+		return "", errors.New(KindHint())
 	}
 	if all {
 		return `{"all":true}`, nil
@@ -118,6 +121,12 @@ func partKeys(kind string) []string {
 		return []string{"text", "metadata"}
 	case KindPodcast:
 		return []string{"audio", "metadata"}
+	case KindTrending:
+		return []string{"text", "metadata", "words", "media"}
+	case KindHN:
+		return []string{"text", "comments", "screenshot", "metadata", "words"}
+	case KindGoogle, KindDDG:
+		return []string{"text", "metadata", "words"}
 	default:
 		return nil
 	}
@@ -139,6 +148,10 @@ func setPart(c *Capture, key string, on bool) {
 		c.Words = on
 	case "audio":
 		c.Audio = on
+	case "media":
+		c.Media = on
+	case "comments":
+		c.Comments = on
 	}
 }
 
@@ -158,6 +171,10 @@ func partOn(c Capture, key string) bool {
 		return c.Words
 	case "audio":
 		return c.Audio
+	case "media":
+		return c.Media
+	case "comments":
+		return c.Comments
 	default:
 		return false
 	}

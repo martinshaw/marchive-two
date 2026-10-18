@@ -56,7 +56,7 @@ func MergeWordIndexes(title string, parts ...WordIndex) WordIndex {
 	counts := map[string]int{}
 	for _, part := range parts {
 		for _, item := range part.Words {
-			word := strings.Trim(strings.ToLower(strings.TrimSpace(item.Word)), "'’-")
+			word := strings.Trim(strings.TrimSpace(item.Word), "'’-")
 			if word == "" || item.Count < 1 || !hasLetterOrNumber(word) {
 				continue
 			}
@@ -143,7 +143,7 @@ func tokenize(s string) []string {
 		if len(cur) == 0 {
 			return
 		}
-		word := strings.Trim(strings.ToLower(string(cur)), "'’-")
+		word := strings.Trim(string(cur), "'’-")
 		cur = cur[:0]
 		if word == "" || !hasLetterOrNumber(word) {
 			return

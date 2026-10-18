@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -45,6 +46,38 @@ func SafeFileName(title, identity string) string {
 		name = "item"
 	}
 	return name + "-" + ShortHash(identity)
+}
+
+// SourceDirName is an id-prefixed slug of a source name, such as "4-bbc-news".
+func SourceDirName(id int64, name string) string {
+	slug := fileSlug(name)
+	if slug == "" {
+		slug = "source"
+	}
+	return strconv.FormatInt(id, 10) + "-" + slug
+}
+
+func fileSlug(name string) string {
+	var b strings.Builder
+	lastDash := false
+	count := 0
+	for _, r := range strings.ToLower(name) {
+		if count >= 60 {
+			break
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastDash = false
+			count++
+			continue
+		}
+		if !lastDash && count > 0 {
+			b.WriteByte('-')
+			lastDash = true
+			count++
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // NormalizeURL strips a fragment and trailing slash so the same address matches.

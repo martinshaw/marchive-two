@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/signal"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -43,6 +44,7 @@ func Execute() error {
 			return serve(cmd, false)
 		},
 	})
+	root.AddCommand(cliSetup())
 
 	sources := &cobra.Command{Use: "sources", Short: "List and edit sources"}
 	sources.AddCommand(sourcesList(), sourcesAdd(), sourcesDelete())
@@ -167,9 +169,9 @@ func sourcesAdd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "display name")
 	cmd.Flags().StringVar(&rawURL, "url", "", "page, feed, or section URL")
-	cmd.Flags().StringVar(&kind, "provider", "", "webpage, article_index, podcast, or text_extract")
+	cmd.Flags().StringVar(&kind, "provider", "", "webpage, article_index, podcast, text_extract, x_trending, hn_entry, google_search, or ddg_search")
 	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector for article links")
-	cmd.Flags().StringVar(&every, "every", "1h", "how often to check, such as 30m or 6h")
+	cmd.Flags().StringVar(&every, "every", "1h", "how often to check, such as 30m, 6h, or once")
 	cmd.Flags().StringVar(&dest, "dest", "", "folder for archived files")
 	cmd.Flags().IntVar(&maxNew, "max-new", 20, "new articles or episodes to take per run (0 is unlimited)")
 	_ = cmd.MarkFlagRequired("url")
@@ -191,7 +193,7 @@ func sourcesDelete() *cobra.Command {
 			return withEither(func(c *client.Client) error {
 				return c.DeleteSource(id)
 			}, func(svc *service.Service) error {
-				return svc.DeleteSource(id)
+				return svc.DeleteSource(id, false)
 			})
 		},
 	}
@@ -265,7 +267,7 @@ func schedulesSet() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&every, "every", "", "interval such as 30m or 6h")
+	cmd.Flags().StringVar(&every, "every", "", "interval such as 30m, 6h, or once")
 	cmd.Flags().StringVar(&dest, "dest", "", "archive folder")
 	cmd.Flags().IntVar(&maxNew, "max-new", 20, "new items per run")
 	cmd.Flags().StringVar(&enabled, "enabled", "", "true or false")
@@ -428,6 +430,7 @@ func openLocal(dir string) (*service.Service, func(), error) {
 		return nil, nil, err
 	}
 	svc := service.New(st, nil, browser.New(paths.Profile(dir)))
+	svc.DataDir = dir
 	return svc, func() {
 		st.Close()
 		lk.Release()
@@ -447,9 +450,12 @@ func parseID(raw string) (int64, error) {
 }
 
 func durationSeconds(raw string) (int, error) {
+	if strings.EqualFold(strings.TrimSpace(raw), "once") {
+		return 0, nil
+	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("interval must look like 30m or 1h")
+		return 0, fmt.Errorf("interval must look like 30m, 1h, or once")
 	}
 	if d < 30*time.Second {
 		return 0, fmt.Errorf("the interval must be at least 30 seconds")
@@ -458,6 +464,9 @@ func durationSeconds(raw string) (int, error) {
 }
 
 func everyLabel(seconds int) string {
+	if seconds == 0 {
+		return "once"
+	}
 	if seconds%3600 == 0 {
 		return fmt.Sprintf("%dh", seconds/3600)
 	}

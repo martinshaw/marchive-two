@@ -58,6 +58,9 @@ func Serve(ctx context.Context, opts Options) error {
 	runr := runner.New(st, reg, br)
 	svc := service.New(st, runr, br)
 	svc.DataDir = opts.DataDir
+	if err := svc.NestSourceCaptures(); err != nil {
+		return err
+	}
 
 	configured, err := st.ListenPort()
 	if err != nil {

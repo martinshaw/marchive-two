@@ -6,7 +6,6 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -14,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/martinshaw/marchive-two/internal/provider"
 	"github.com/martinshaw/marchive-two/internal/service"
@@ -22,66 +20,31 @@ import (
 	"github.com/martinshaw/marchive-two/internal/version"
 )
 
-//go:embed templates static
-var assets embed.FS
+//go:embed static
+var staticAssets embed.FS
 
-func templateTime(v any) (time.Time, bool) {
-	switch x := v.(type) {
-	case time.Time:
-		return x, true
-	case *time.Time:
-		if x == nil {
-			return time.Time{}, false
-		}
-		return *x, true
-	default:
-		return time.Time{}, false
-	}
-}
+//go:embed all:ui/dist
+var uiAssets embed.FS
 
 // New returns the localhost handler.
 func New(svc *service.Service) http.Handler {
-	static, err := fs.Sub(assets, "static")
+	static, err := fs.Sub(staticAssets, "static")
 	if err != nil {
 		panic(err)
 	}
-	h := &handler{
-		svc: svc,
-		tmpl: template.Must(template.New("").Funcs(template.FuncMap{
-			"kind":    provider.Label,
-			"version": func() string { return version.Version },
-			"every": func(n int, unit string) string {
-				if n == 1 && len(unit) > 1 {
-					unit = unit[:len(unit)-1]
-				}
-				return strconv.Itoa(n) + " " + unit
-			},
-			"stamp": func(v any) string {
-				t, ok := templateTime(v)
-				if !ok || t.IsZero() {
-					return ""
-				}
-				return t.Local().Format("2 Jan 2006 15:04")
-			},
-			"unix": func(v any) string {
-				t, ok := templateTime(v)
-				if !ok || t.IsZero() {
-					return ""
-				}
-				return strconv.FormatInt(t.Unix(), 10)
-			},
-			"itemMeter": itemMeter,
-			"runMeter":  runMeter,
-		}).ParseFS(assets, "templates/*.html")),
+	ui, err := fs.Sub(uiAssets, "ui/dist")
+	if err != nil {
+		panic(err)
 	}
+	h := &handler{svc: svc}
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	mux.Handle("GET /assets/", http.FileServer(http.FS(ui)))
 	mux.HandleFunc("GET /{$}", h.page)
-	mux.HandleFunc("GET /fragment/live", h.live)
-	mux.HandleFunc("GET /fragment/library", h.library)
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/state", h.state)
 	mux.HandleFunc("POST /api/sources", h.createSource)
+	mux.HandleFunc("POST /api/sources/check", h.checkSource)
 	mux.HandleFunc("POST /sources", h.createSource)
 	mux.HandleFunc("DELETE /api/sources/{id}", h.deleteSource)
 	mux.HandleFunc("POST /sources/{id}/delete", h.deleteSource)
@@ -89,6 +52,11 @@ func New(svc *service.Service) http.Handler {
 	mux.HandleFunc("POST /schedules/{id}", h.updateSchedule)
 	mux.HandleFunc("DELETE /api/schedules/{id}", h.deleteSchedule)
 	mux.HandleFunc("POST /schedules/{id}/delete", h.deleteSchedule)
+	mux.HandleFunc("DELETE /api/runs/{id}", h.deleteRun)
+	mux.HandleFunc("POST /runs/{id}/delete", h.deleteRun)
+	mux.HandleFunc("POST /api/items/read", h.markItemsRead)
+	mux.HandleFunc("DELETE /api/items/{id}", h.deleteItem)
+	mux.HandleFunc("POST /items/{id}/delete", h.deleteItem)
 	mux.HandleFunc("POST /api/schedules/{id}/run", h.runSchedule)
 	mux.HandleFunc("POST /schedules/{id}/run", h.runSchedule)
 	mux.HandleFunc("POST /api/runner", h.setRunner)
@@ -113,44 +81,19 @@ func New(svc *service.Service) http.Handler {
 }
 
 type handler struct {
-	svc  *service.Service
-	tmpl *template.Template
+	svc *service.Service
 }
 
 func (h *handler) page(w http.ResponseWriter, r *http.Request) {
-	state, err := h.svc.State()
+	data, err := uiAssets.ReadFile("ui/dist/index.html")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	state.Error = r.URL.Query().Get("error")
-	h.render(w, "page", state)
-}
-
-func (h *handler) live(w http.ResponseWriter, r *http.Request) {
-	h.fragment(w, r, "live")
-}
-
-func (h *handler) library(w http.ResponseWriter, r *http.Request) {
-	h.fragment(w, r, "library")
-}
-
-func (h *handler) fragment(w http.ResponseWriter, r *http.Request, name string) {
-	state, err := h.svc.State()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	h.render(w, name, state)
-}
-
-func (h *handler) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	_, _ = w.Write(data)
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +106,10 @@ func (h *handler) state(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, struct {
+		service.State
+		Version string `json:"version"`
+	}{State: state, Version: version.Version})
 }
 
 func (h *handler) createSource(w http.ResponseWriter, r *http.Request) {
@@ -218,13 +164,30 @@ func (h *handler) createSource(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (h *handler) checkSource(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL      string `json:"url"`
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid JSON"})
+		return
+	}
+	checked, err := h.svc.CheckSource(r.Context(), in.URL, in.Provider)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, checked)
+}
+
 func (h *handler) deleteSource(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid source"})
 		return
 	}
-	if err := h.svc.DeleteSource(id); err != nil {
+	if err := h.svc.DeleteSource(id, deleteFiles(r)); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -286,11 +249,66 @@ func (h *handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid schedule"})
 		return
 	}
-	if err := h.svc.DeleteSchedule(id); err != nil {
+	if err := h.svc.DeleteSchedule(id, deleteFiles(r)); err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	h.done(w, r, map[string]bool{"ok": true})
+}
+
+func (h *handler) deleteRun(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid capture"})
+		return
+	}
+	if err := h.svc.DeleteRun(id, deleteFiles(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.done(w, r, map[string]bool{"ok": true})
+}
+
+func (h *handler) markItemsRead(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs  []int64 `json:"ids"`
+		Read bool    `json:"read"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid JSON"})
+		return
+	}
+	if err := h.svc.SetItemsRead(body.IDs, body.Read); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.done(w, r, map[string]bool{"ok": true})
+}
+
+func (h *handler) deleteItem(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid item"})
+		return
+	}
+	if err := h.svc.DeleteItem(id, deleteFiles(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.done(w, r, map[string]bool{"ok": true})
+}
+
+func deleteFiles(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("files"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	_ = r.ParseForm()
+	switch strings.ToLower(strings.TrimSpace(r.Form.Get("files"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 func (h *handler) runSchedule(w http.ResponseWriter, r *http.Request) {
@@ -489,13 +507,13 @@ func (h *handler) runWords(w http.ResponseWriter, r *http.Request) {
 	h.wordCloud(w, r, h.svc.RunWords)
 }
 
-func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(int64, bool) (service.WordCloud, error)) {
+func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(int64, bool, bool) (service.WordCloud, error)) {
 	id, err := pathID(r)
 	if err != nil {
 		h.fail(w, r, &service.Error{Status: 400, Msg: "invalid id"})
 		return
 	}
-	cloud, err := load(id, keepCommonWords(r))
+	cloud, err := load(id, keepCommonWords(r), keepURLWords(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -504,7 +522,7 @@ func (h *handler) wordCloud(w http.ResponseWriter, r *http.Request, load func(in
 }
 
 func (h *handler) wordTimeline(w http.ResponseWriter, r *http.Request) {
-	cloud, err := h.svc.WordTimeline(keepCommonWords(r))
+	cloud, err := h.svc.WordTimeline(keepCommonWords(r), keepURLWords(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -514,6 +532,15 @@ func (h *handler) wordTimeline(w http.ResponseWriter, r *http.Request) {
 
 func keepCommonWords(r *http.Request) bool {
 	switch r.URL.Query().Get("common") {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func keepURLWords(r *http.Request) bool {
+	switch r.URL.Query().Get("url") {
 	case "1", "true", "yes":
 		return true
 	default:
@@ -608,6 +635,9 @@ func pathID(r *http.Request) (int64, error) {
 }
 
 func intervalFromValues(countText, unit string) (int, error) {
+	if unit == "once" {
+		return 0, nil
+	}
 	n, err := strconv.Atoi(strings.TrimSpace(countText))
 	if err != nil || n < 1 {
 		return 0, &service.Error{Status: 400, Msg: "enter how often to check"}
@@ -621,7 +651,7 @@ func intervalFromValues(countText, unit string) (int, error) {
 	case "seconds":
 		mult = 1
 	default:
-		return 0, &service.Error{Status: 400, Msg: "choose seconds, minutes, or hours"}
+		return 0, &service.Error{Status: 400, Msg: "choose seconds, minutes, hours, or once"}
 	}
 	return n * mult, nil
 }

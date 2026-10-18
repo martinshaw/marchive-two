@@ -19,6 +19,20 @@ func TestChromeApp(t *testing.T) {
 	}
 }
 
+func TestChromeArgsUsesAVisibleWindowWhenHeaded(t *testing.T) {
+	visible := strings.Join(chromeArgs("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/tmp/profile", 9, true), "\n")
+	if strings.Contains(visible, "headless") {
+		t.Fatalf("visible args include headless:\n%s", visible)
+	}
+	if !strings.Contains(visible, "--profile-directory=Default") {
+		t.Fatalf("visible args:\n%s", visible)
+	}
+	hidden := strings.Join(chromeArgs("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/tmp/profile", 9, false), "\n")
+	if !strings.Contains(hidden, "--headless=new") || strings.Contains(hidden, "--profile-directory=Default") {
+		t.Fatalf("hidden args:\n%s", hidden)
+	}
+}
+
 func TestSingletonPID(t *testing.T) {
 	if got := singletonPID("Martins-MacBook-Pro.local-33821"); got != 33821 {
 		t.Fatalf("pid = %d", got)

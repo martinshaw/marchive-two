@@ -1,4 +1,4 @@
-// Package provider captures webpages, article indexes, podcasts, and text.
+// Package provider captures webpages, article indexes, podcasts, text, X posts, Hacker News, and search results.
 package provider
 
 import (
@@ -14,7 +14,16 @@ const (
 	KindArticles = "article_index"
 	KindPodcast  = "podcast"
 	KindText     = "text_extract"
+	KindTrending = "x_trending"
+	KindHN       = "hn_entry"
+	KindGoogle   = "google_search"
+	KindDDG      = "ddg_search"
 )
+
+// KindHint is the message shown when a source kind is missing or unknown.
+func KindHint() string {
+	return "choose a webpage, article index, podcast, text extract, X trending, Hacker News entry, Google search, or DuckDuckGo search"
+}
 
 // Summary is the outcome of one capture, even when individual items fail.
 type Summary struct {
@@ -53,6 +62,10 @@ func DefaultRegistry() *Registry {
 	r.Register(ArticleIndex{})
 	r.Register(Podcast{})
 	r.Register(Text{})
+	r.Register(XTrending{})
+	r.Register(HackerNews{})
+	r.Register(GoogleSearch{})
+	r.Register(DuckDuckGo{})
 	return r
 }
 
@@ -70,7 +83,7 @@ func (r *Registry) Get(kind string) (Provider, bool) {
 
 func ValidKind(kind string) bool {
 	switch kind {
-	case KindWebpage, KindArticles, KindPodcast, KindText:
+	case KindWebpage, KindArticles, KindPodcast, KindText, KindTrending, KindHN, KindGoogle, KindDDG:
 		return true
 	default:
 		return false
@@ -87,6 +100,14 @@ func Label(kind string) string {
 		return "Podcast"
 	case KindText:
 		return "Text extract"
+	case KindTrending:
+		return "X trending"
+	case KindHN:
+		return "Hacker News entry"
+	case KindGoogle:
+		return "Google search"
+	case KindDDG:
+		return "DuckDuckGo"
 	default:
 		return kind
 	}

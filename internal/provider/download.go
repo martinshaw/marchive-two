@@ -84,6 +84,26 @@ func getBytes(ctx context.Context, client *http.Client, rawURL string, limit int
 }
 
 func downloadFile(ctx context.Context, client *http.Client, rawURL, dest string) error {
+	return download(ctx, client, rawURL, func(*http.Response) (string, error) {
+		return dest, nil
+	})
+}
+
+// downloadNamed saves rawURL beside other capture files. The file stem is stem and the extension comes from the address or the response.
+func downloadNamed(ctx context.Context, client *http.Client, rawURL, dir, stem, kind string) (string, error) {
+	var name string
+	err := download(ctx, client, rawURL, func(resp *http.Response) (string, error) {
+		ext := mediaExtension(rawURL, resp.Header.Get("Content-Type"), kind)
+		name = stem + ext
+		return filepath.Join(dir, name), nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+func download(ctx context.Context, client *http.Client, rawURL string, destOf func(*http.Response) (string, error)) error {
 	dlCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, rawURL, nil)
@@ -91,6 +111,10 @@ func downloadFile(ctx context.Context, client *http.Client, rawURL, dest string)
 		return err
 	}
 	req.Header.Set("User-Agent", "Marchive/"+version.Version)
+	req.Header.Set("Accept", "*/*")
+	if u, perr := parseURL(rawURL); perr == nil && strings.Contains(strings.ToLower(u.Hostname()), "twimg.com") {
+		req.Header.Set("Referer", "https://x.com/")
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -98,6 +122,10 @@ func downloadFile(ctx context.Context, client *http.Client, rawURL, dest string)
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return statusError{code: resp.StatusCode, url: rawURL}
+	}
+	dest, err := destOf(resp)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
@@ -201,5 +229,67 @@ func extensionFrom(rawURL, contentType string) string {
 		return ".ogg"
 	default:
 		return ".bin"
+	}
+}
+
+func mediaExtension(rawURL, contentType, kind string) string {
+	if u, err := parseURL(rawURL); err == nil {
+		switch strings.ToLower(u.Query().Get("format")) {
+		case "jpg", "jpeg":
+			return ".jpg"
+		case "png":
+			return ".png"
+		case "webp":
+			return ".webp"
+		case "gif":
+			return ".gif"
+		case "mp4":
+			return ".mp4"
+		}
+		if ext := strings.ToLower(path.Ext(u.Path)); mediaExtOK(ext) {
+			return ext
+		}
+	}
+	ct := strings.ToLower(contentType)
+	switch {
+	case strings.Contains(ct, "jpeg"):
+		return ".jpg"
+	case strings.Contains(ct, "png"):
+		return ".png"
+	case strings.Contains(ct, "webp"):
+		return ".webp"
+	case strings.Contains(ct, "gif"):
+		return ".gif"
+	case strings.Contains(ct, "mp4"):
+		return ".mp4"
+	case strings.Contains(ct, "webm"):
+		return ".webm"
+	case strings.Contains(ct, "mpeg"), strings.Contains(ct, "mp3"):
+		return ".mp3"
+	case strings.Contains(ct, "wav"):
+		return ".wav"
+	case strings.Contains(ct, "aac"):
+		return ".aac"
+	case strings.Contains(ct, "ogg"):
+		return ".ogg"
+	}
+	switch kind {
+	case "image":
+		return ".jpg"
+	case "video":
+		return ".mp4"
+	case "audio":
+		return ".mp3"
+	default:
+		return ".bin"
+	}
+}
+
+func mediaExtOK(ext string) bool {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".webm", ".mov", ".m4v", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".opus":
+		return true
+	default:
+		return false
 	}
 }

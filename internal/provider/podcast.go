@@ -170,7 +170,11 @@ func (Podcast) Run(ctx context.Context, req Request) (Summary, error) {
 
 func saveEpisode(ctx context.Context, client *http.Client, req Request, item *gofeed.Item, feedTitle string, record *store.Item, enclosure string) error {
 	capture := Resolve(req.Source.Provider, req.Source.Capture)
-	dir := filepath.Join(req.Schedule.DownloadLocation, SafeFileName(record.Title, record.IdentityKey))
+	root, err := sourceCaptureDir(req)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, SafeFileName(record.Title, record.IdentityKey))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}

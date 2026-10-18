@@ -19,6 +19,7 @@ type saveMode struct {
 	MHTML      bool
 	Metadata   bool
 	Words      bool
+	Media      bool
 }
 
 func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL string, mode saveMode) (store.Item, error) {
@@ -49,7 +50,11 @@ func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL st
 	if kind == "article" || kind == "episode" {
 		dirName = SafeFileName(meta.Title, identity)
 	}
-	dir := filepath.Join(req.Schedule.DownloadLocation, dirName)
+	root, err := sourceCaptureDir(req)
+	if err != nil {
+		return store.Item{}, err
+	}
+	dir := filepath.Join(root, dirName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return store.Item{}, err
 	}
@@ -127,6 +132,14 @@ func saveSnapshot(req Request, doc *browser.Document, kind, identity, itemURL st
 	item.ID = id
 	cleanup = false
 	return item, nil
+}
+
+func sourceCaptureDir(req Request) (string, error) {
+	dir := filepath.Join(req.Schedule.DownloadLocation, SourceDirName(req.Source.ID, req.Source.Name))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func maybeRenameSource(req Request, title string) {

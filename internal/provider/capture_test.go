@@ -11,6 +11,22 @@ func TestResolveEmptyKeepsEverything(t *testing.T) {
 	if !pod.Audio || !pod.Metadata || pod.HTML || pod.Words {
 		t.Fatalf("podcast default = %+v", pod)
 	}
+	trend := Resolve(KindTrending, "")
+	if !trend.Text || !trend.Metadata || !trend.Words || !trend.Media || trend.HTML || trend.Screenshot {
+		t.Fatalf("trending default = %+v", trend)
+	}
+	hn := Resolve(KindHN, "")
+	if !hn.Text || !hn.Comments || !hn.Screenshot || !hn.Metadata || !hn.Words || hn.Media || hn.HTML {
+		t.Fatalf("hacker news default = %+v", hn)
+	}
+	search := Resolve(KindGoogle, "")
+	if !search.Text || !search.Metadata || !search.Words || search.HTML || search.Screenshot {
+		t.Fatalf("google default = %+v", search)
+	}
+	ddg := Resolve(KindDDG, "")
+	if !ddg.Text || !ddg.Metadata || !ddg.Words || ddg.HTML {
+		t.Fatalf("duckduckgo default = %+v", ddg)
+	}
 }
 
 func TestEncodeSelection(t *testing.T) {

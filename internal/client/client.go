@@ -61,6 +61,10 @@ func (c *Client) SetRunner(on bool) error {
 	return c.post("/api/runner", map[string]bool{"enabled": on}, nil)
 }
 
+func (c *Client) UpdateSettings(in service.SettingsInput) error {
+	return c.post("/api/settings", in, nil)
+}
+
 func (c *Client) CancelRun(id int64) error {
 	return c.post(fmt.Sprintf("/api/runs/%d/cancel", id), map[string]any{}, nil)
 }
