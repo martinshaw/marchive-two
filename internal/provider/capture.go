@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,14 @@ type Capture struct {
 	Audio      bool `json:"audio,omitempty"`
 	Media      bool `json:"media,omitempty"`
 	Comments   bool `json:"comments,omitempty"`
+	Subtitles  bool `json:"subtitles,omitempty"`
+	Video      bool `json:"video,omitempty"`
+	// VideoQuality is low, mid, or high. Empty means high.
+	VideoQuality string `json:"videoQuality,omitempty"`
+	// AudioFormat is best, m4a, or opus. Empty means best.
+	AudioFormat string `json:"audioFormat,omitempty"`
+	// CommentLimit is "all" or a count. Empty means all.
+	CommentLimit string `json:"commentLimit,omitempty"`
 }
 
 func (c Capture) mode() saveMode {
@@ -37,9 +46,13 @@ func Resolve(kind, raw string) Capture {
 	raw = strings.TrimSpace(raw)
 	var stored Capture
 	if raw == "" || json.Unmarshal([]byte(raw), &stored) != nil || stored.All {
-		return everything(kind)
+		out := everything(kind)
+		applyYouTubeOptions(kind, &out, stored)
+		return out
 	}
-	return onlyKind(kind, stored)
+	out := onlyKind(kind, stored)
+	applyYouTubeOptions(kind, &out, stored)
+	return out
 }
 
 // EncodeSelection stores either every part or the listed part keys.
@@ -73,15 +86,18 @@ func EncodeSelection(kind string, all bool, selected []string) (string, error) {
 // NormalizeStored accepts empty, {"all":true}, or a partial selection and returns the stored JSON.
 func NormalizeStored(kind, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == `{"all":true}` {
-		return EncodeSelection(kind, true, nil)
-	}
 	var stored Capture
-	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
-		return "", errors.New("capture selection is not valid")
+	if raw != "" && raw != `{"all":true}` {
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			return "", errors.New("capture selection is not valid")
+		}
 	}
-	if stored.All {
-		return `{"all":true}`, nil
+	quality, audio, comments, err := youtubeOptions(kind, stored)
+	if err != nil {
+		return "", err
+	}
+	if raw == "" || raw == `{"all":true}` || stored.All {
+		return encodeParts(kind, true, nil, quality, audio, comments)
 	}
 	var keys []string
 	for _, key := range partKeys(kind) {
@@ -89,7 +105,111 @@ func NormalizeStored(kind, raw string) (string, error) {
 			keys = append(keys, key)
 		}
 	}
-	return EncodeSelection(kind, false, keys)
+	return encodeParts(kind, false, keys, quality, audio, comments)
+}
+
+func encodeParts(kind string, all bool, selected []string, quality, audio, comments string) (string, error) {
+	base, err := EncodeSelection(kind, all, selected)
+	if err != nil {
+		return "", err
+	}
+	if kind != KindYouTube {
+		return base, nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(base), &doc); err != nil {
+		return "", err
+	}
+	if quality != "" && quality != "high" {
+		doc["videoQuality"] = quality
+	}
+	if audio != "" && audio != "best" {
+		doc["audioFormat"] = audio
+	}
+	if comments != "" && comments != "all" {
+		doc["commentLimit"] = comments
+	}
+	if len(doc) == 1 {
+		if on, ok := doc["all"].(bool); ok && on {
+			return `{"all":true}`, nil
+		}
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func youtubeOptions(kind string, stored Capture) (quality, audio, comments string, err error) {
+	if kind != KindYouTube {
+		return "", "", "", nil
+	}
+	quality, err = canonicalQuality(stored.VideoQuality)
+	if err != nil {
+		return "", "", "", err
+	}
+	audio, err = canonicalAudio(stored.AudioFormat)
+	if err != nil {
+		return "", "", "", err
+	}
+	comments, err = canonicalComments(stored.CommentLimit)
+	return quality, audio, comments, err
+}
+
+func canonicalQuality(raw string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "high":
+		return "high", nil
+	case "low", "mid":
+		return strings.TrimSpace(strings.ToLower(raw)), nil
+	default:
+		return "", errors.New("choose a low, medium, or high video")
+	}
+}
+
+func canonicalAudio(raw string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "best":
+		return "best", nil
+	case "m4a", "opus":
+		return strings.TrimSpace(strings.ToLower(raw)), nil
+	default:
+		return "", errors.New("choose best, m4a, or opus audio")
+	}
+}
+
+func canonicalComments(raw string) (string, error) {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" || raw == "all" {
+		return "all", nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 100000 {
+		return "", errors.New("choose all comments, or a number from 1 to 100000")
+	}
+	return strconv.Itoa(n), nil
+}
+
+func applyYouTubeOptions(kind string, out *Capture, stored Capture) {
+	if out == nil || kind != KindYouTube {
+		return
+	}
+	quality, _ := canonicalQuality(stored.VideoQuality)
+	audio, _ := canonicalAudio(stored.AudioFormat)
+	comments, _ := canonicalComments(stored.CommentLimit)
+	if quality == "" {
+		quality = "high"
+	}
+	if audio == "" {
+		audio = "best"
+	}
+	if comments == "" {
+		comments = "all"
+	}
+	out.VideoQuality = quality
+	out.AudioFormat = audio
+	out.CommentLimit = comments
 }
 
 func everything(kind string) Capture {
@@ -126,7 +246,9 @@ func partKeys(kind string) []string {
 	case KindHN:
 		return []string{"text", "comments", "screenshot", "metadata", "words"}
 	case KindGoogle, KindDDG:
-		return []string{"text", "metadata", "words"}
+		return []string{"text", "screenshot", "metadata", "words"}
+	case KindYouTube:
+		return []string{"metadata", "subtitles", "video", "audio", "comments", "screenshot"}
 	default:
 		return nil
 	}
@@ -152,6 +274,10 @@ func setPart(c *Capture, key string, on bool) {
 		c.Media = on
 	case "comments":
 		c.Comments = on
+	case "subtitles":
+		c.Subtitles = on
+	case "video":
+		c.Video = on
 	}
 }
 
@@ -175,6 +301,10 @@ func partOn(c Capture, key string) bool {
 		return c.Media
 	case "comments":
 		return c.Comments
+	case "subtitles":
+		return c.Subtitles
+	case "video":
+		return c.Video
 	default:
 		return false
 	}

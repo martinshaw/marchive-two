@@ -3,7 +3,7 @@ import { everyParts, intervalSeconds } from "./format.js";
 
 export function bindCommands({
   view, library, reload, showView,
-  setMenu, setContext, setSheet, setBanner, setChromeOpen, setEditVersion, setConfirm,
+  setMenu, setContext, setSheet, setBanner, setChromeOpen, setYtDlpOpen, setEditVersion, setConfirm,
   editRow, confirmAction,
   liveSchedules, liveRuns, liveItems,
 }) {
@@ -82,6 +82,10 @@ export function bindCommands({
     if (action === "chrome-install") {
       sessionStorage.removeItem("marchive-chrome-later");
       setChromeOpen(true);
+      return;
+    }
+    if (action === "ytdlp") {
+      setYtDlpOpen(true);
       return;
     }
     if (action === "settings") { showView("settings", ""); return; }

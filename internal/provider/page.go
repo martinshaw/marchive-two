@@ -86,7 +86,7 @@ func fetchHashed(ctx context.Context, req Request, opt browser.Options) (*browse
 		return nil, "", err
 	}
 	var doc *browser.Document
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var fetchErr error
 		doc, fetchErr = req.Fetch.Fetch(ctx, req.Source.URL, opt)
 		return fetchErr

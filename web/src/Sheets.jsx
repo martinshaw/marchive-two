@@ -1,21 +1,39 @@
 import { useEffect, useState } from "react";
 import { captureParts, encodeCapture, parseCapture } from "./format.js";
 
+function captureOptions(stored) {
+  return {
+    videoQuality: stored.videoQuality || "high",
+    audioFormat: stored.audioFormat || "best",
+    commentLimit: stored.commentLimit || "all",
+  };
+}
+
 export function CaptureFields({ kind, capture, onChange, legend = "Capture" }) {
   const stored = parseCapture(capture);
   const parts = captureParts(kind);
   const all = !!stored.all || parts.every((part) => stored[part.key]);
+  const options = captureOptions(stored);
+  const youtube = kind === "youtube_video";
+  const partOn = (key) => all || !!stored[key];
+  function emit(nextAll, keys, nextOptions) {
+    onChange(encodeCapture(nextAll, keys, nextOptions || options));
+  }
   function setAll(checked) {
-    onChange(checked ? '{"all":true}' : encodeCapture(false, parts.map((part) => part.key)));
+    emit(checked, parts.map((part) => part.key));
   }
   function toggle(key, checked) {
     const next = {};
     parts.forEach((part) => { next[part.key] = stored.all || !!stored[part.key]; });
     next[key] = checked;
     const keys = parts.map((part) => part.key).filter((part) => next[part]);
-    const every = parts.every((part) => next[part.key]);
-    onChange(every ? '{"all":true}' : encodeCapture(false, keys));
+    emit(parts.every((part) => next[part.key]), keys);
   }
+  function setOption(key, value) {
+    const keys = parts.map((part) => part.key).filter((part) => partOn(part));
+    emit(all, keys, { ...options, [key]: value });
+  }
+  const commentAll = options.commentLimit === "all";
   return (
     <fieldset className="capture">
       <legend>{legend}</legend>
@@ -25,10 +43,40 @@ export function CaptureFields({ kind, capture, onChange, legend = "Capture" }) {
       <div className="capture-grid">
         {parts.map((part) => (
           <label className="check" key={`${part.key}-${part.label}`}>
-            <input type="checkbox" checked={all || !!stored[part.key]} disabled={all} onChange={(event) => toggle(part.key, event.target.checked)} /> {part.label}
+            <input type="checkbox" checked={partOn(part.key)} disabled={all} onChange={(event) => toggle(part.key, event.target.checked)} /> {part.label}
           </label>
         ))}
       </div>
+      {youtube ? (
+        <div className="capture-options">
+          <label>Video quality
+            <select aria-label="Video quality" value={options.videoQuality} disabled={!partOn("video")} onChange={(event) => setOption("videoQuality", event.target.value)}>
+              <option value="low">Low</option>
+              <option value="mid">Medium</option>
+              <option value="high">High</option>
+            </select>
+            <span className="hint">Low is about 480p, medium about 720p, and high the largest picture. A separate sound track is combined when ffmpeg is installed.</span>
+          </label>
+          <label>Audio format
+            <select aria-label="Audio format" value={options.audioFormat} disabled={!partOn("audio")} onChange={(event) => setOption("audioFormat", event.target.value)}>
+              <option value="best">Best available</option>
+              <option value="m4a">M4A</option>
+              <option value="opus">Opus</option>
+            </select>
+          </label>
+          <label>Comments
+            <select aria-label="How many comments" value={commentAll ? "all" : "count"} disabled={!partOn("comments")} onChange={(event) => setOption("commentLimit", event.target.value === "all" ? "all" : (options.commentLimit === "all" ? "100" : options.commentLimit))}>
+              <option value="all">All</option>
+              <option value="count">A number</option>
+            </select>
+          </label>
+          {partOn("comments") && !commentAll ? (
+            <label>Comment count
+              <input type="number" min="1" max="100000" required value={options.commentLimit} onChange={(event) => setOption("commentLimit", event.target.value)} />
+            </label>
+          ) : null}
+        </div>
+      ) : null}
     </fieldset>
   );
 }
@@ -123,13 +171,17 @@ export function ConfirmSheet({ open, text, onClose, onYes }) {
   );
 }
 
-export function Settings({ library, onSave, onInstall }) {
+export function Settings({ library, onSave, onInstall, onYtDlp }) {
   const [form, setForm] = useState(null);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
     if (!library || dirty) return;
     setForm({
       podcast: library.podcastConcurrency,
+      itemTimeout: String(library.itemTimeoutSeconds ?? 0),
+      captureTimeout: String(library.captureTimeoutSeconds ?? 0),
+      itemTries: String(library.itemTries > 0 ? library.itemTries : 1),
+      captureTries: String(library.captureTries > 0 ? library.captureTries : 1),
       mode: library.listenPort > 0 ? "fixed" : "random",
       port: library.listenPort > 0 ? String(library.listenPort) : "",
       open: library.openOnLogin,
@@ -150,6 +202,10 @@ export function Settings({ library, onSave, onInstall }) {
           event.preventDefault();
           const body = {
             podcastConcurrency: Number(form.podcast),
+            itemTimeoutSeconds: Number(form.itemTimeout),
+            captureTimeoutSeconds: Number(form.captureTimeout),
+            itemTries: Number(form.itemTries),
+            captureTries: Number(form.captureTries),
             listenPort: fixed ? Number(form.port) : 0,
             openOnLogin: form.open,
             restartOnCrash: form.restart,
@@ -174,8 +230,36 @@ export function Settings({ library, onSave, onInstall }) {
           </label>
           <label className="pref-row">
             <span>
+              <strong>Item time limit</strong>
+              <span className="sub">Seconds for one page, file, or request. 0 means no time limit.</span>
+            </span>
+            <input type="number" min="0" max="86400" required value={form.itemTimeout} onChange={(event) => set("itemTimeout", event.target.value)} />
+          </label>
+          <label className="pref-row">
+            <span>
+              <strong>Capture time limit</strong>
+              <span className="sub">Seconds for the whole capture. 0 means no time limit.</span>
+            </span>
+            <input type="number" min="0" max="86400" required value={form.captureTimeout} onChange={(event) => set("captureTimeout", event.target.value)} />
+          </label>
+          <label className="pref-row">
+            <span>
+              <strong>Item attempts</strong>
+              <span className="sub">How many times to try one page, file, or request. 1 means a single attempt.</span>
+            </span>
+            <input type="number" min="1" max="10" required value={form.itemTries} onChange={(event) => set("itemTries", event.target.value)} />
+          </label>
+          <label className="pref-row">
+            <span>
+              <strong>Capture attempts</strong>
+              <span className="sub">How many times to try the whole capture. 1 means a single attempt.</span>
+            </span>
+            <input type="number" min="1" max="10" required value={form.captureTries} onChange={(event) => set("captureTries", event.target.value)} />
+          </label>
+          <label className="pref-row">
+            <span>
               <strong>UI port</strong>
-              <span className="sub">Random chooses a free localhost port whenever Marchive starts. A fixed port is used the next time it starts.{library.activePort > 0 ? ` This session is using ${library.activePort}.` : ""}</span>
+              <span className="sub">Random chooses a free localhost port whenever Marchive starts. A fixed port is used the next time it starts, and is the address an installed app opens.{library.activePort > 0 ? ` This session is using ${library.activePort}.` : ""}</span>
             </span>
             <select value={form.mode} onChange={(event) => set("mode", event.target.value)}>
               <option value="random">Random</option>
@@ -223,6 +307,15 @@ export function Settings({ library, onSave, onInstall }) {
         )}
         {library.signingIn ? <p>Chrome is open on the Marchive profile. Sign in, then quit Chrome.</p> : null}
         {library.browserBusy && !library.signingIn ? <p>Chrome is capturing a page.</p> : null}
+      </div>
+      <h2>yt-dlp</h2>
+      <div className="pref-group prose">
+        {library.ytDlpPath ? (
+          <p>{library.ytDlpVersion ? `yt-dlp ${library.ytDlpVersion} is ready for YouTube videos.` : "yt-dlp is ready for YouTube videos."} Update replaces it with the current release for this computer.</p>
+        ) : (
+          <p>YouTube video, audio, subtitles, and comments use yt-dlp. Marchive downloads the current release into its data folder and can replace it later.</p>
+        )}
+        <p><button type="button" className="push" onClick={onYtDlp}>{library.ytDlpPath ? "Update yt-dlp" : "Install yt-dlp"}</button></p>
       </div>
     </div>
   );

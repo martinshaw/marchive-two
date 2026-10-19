@@ -43,7 +43,7 @@ export function captureRuns(library) {
 }
 
 export function libraryCounts(schedules, runs) {
-  const next = { sources: 0, captures: 0, webpage: 0, article_index: 0, podcast: 0, text_extract: 0, x_trending: 0, hn_entry: 0, google_search: 0, ddg_search: 0, active: 0, failed: 0, succeeded: 0 };
+  const next = { sources: 0, captures: 0, webpage: 0, article_index: 0, podcast: 0, text_extract: 0, x_trending: 0, hn_entry: 0, google_search: 0, ddg_search: 0, youtube_video: 0, active: 0, failed: 0, succeeded: 0 };
   schedules.forEach((row) => {
     next.sources += 1;
     if (next[row.kind] !== undefined) next[row.kind] += 1;

@@ -169,7 +169,7 @@ func sourcesAdd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "display name")
 	cmd.Flags().StringVar(&rawURL, "url", "", "page, feed, or section URL")
-	cmd.Flags().StringVar(&kind, "provider", "", "webpage, article_index, podcast, text_extract, x_trending, hn_entry, google_search, or ddg_search")
+	cmd.Flags().StringVar(&kind, "provider", "", "webpage, article_index, podcast, text_extract, x_trending, hn_entry, google_search, ddg_search, or youtube_video")
 	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector for article links")
 	cmd.Flags().StringVar(&every, "every", "1h", "how often to check, such as 30m, 6h, or once")
 	cmd.Flags().StringVar(&dest, "dest", "", "folder for archived files")

@@ -25,7 +25,7 @@ func (Podcast) Kind() string { return KindPodcast }
 func (Podcast) Run(ctx context.Context, req Request) (Summary, error) {
 	client := mediaClient
 	var body []byte
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var getErr error
 		body, getErr = getBytes(ctx, client, req.Source.URL, 20<<20)
 		return getErr
@@ -190,7 +190,7 @@ func saveEpisode(ctx context.Context, client *http.Client, req Request, item *go
 	}
 	if capture.Audio {
 		dest := filepath.Join(dir, "episode"+extensionFrom(enclosure, ""))
-		attempts, err := withRetry(ctx, 3, func() error {
+		attempts, err := withRetry(ctx, 1, func(ctx context.Context) error {
 			return downloadFile(ctx, client, enclosure, dest)
 		})
 		record.RetryCount = attempts - 1

@@ -6,7 +6,38 @@ import (
 	"time"
 )
 
-func withRetry(ctx context.Context, attempts int, fn func() error) (int, error) {
+type itemLimitKey struct{}
+
+type itemLimits struct {
+	timeout time.Duration
+	tries   int
+}
+
+// WithItemLimits attaches the per-request time limit and attempt count to ctx.
+// A zero timeout means the request has no time limit of its own.
+// tries below 1 leaves the caller's fallback attempt count in place.
+func WithItemLimits(ctx context.Context, timeout time.Duration, tries int) context.Context {
+	return context.WithValue(ctx, itemLimitKey{}, itemLimits{timeout: timeout, tries: tries})
+}
+
+// ItemBudget reports the per-request time limit and attempt count on ctx.
+// tries is zero when ctx has no budget.
+func ItemBudget(ctx context.Context) (timeout time.Duration, tries int) {
+	limits, ok := ctx.Value(itemLimitKey{}).(itemLimits)
+	if !ok {
+		return 0, 0
+	}
+	return limits.timeout, limits.tries
+}
+
+func withRetry(ctx context.Context, attempts int, fn func(context.Context) error) (int, error) {
+	timeout := time.Duration(0)
+	if limits, ok := ctx.Value(itemLimitKey{}).(itemLimits); ok {
+		if limits.tries >= 1 {
+			attempts = limits.tries
+		}
+		timeout = limits.timeout
+	}
 	if attempts < 1 {
 		attempts = 1
 	}
@@ -15,8 +46,8 @@ func withRetry(ctx context.Context, attempts int, fn func() error) (int, error) 
 		if err = ctx.Err(); err != nil {
 			return attempt, err
 		}
-		err = fn()
-		if err == nil || !retryable(err) {
+		err = runAttempt(ctx, timeout, fn)
+		if err == nil || !retryAttempt(ctx, err) {
 			return attempt, err
 		}
 		if attempt == attempts {
@@ -32,6 +63,30 @@ func withRetry(ctx context.Context, attempts int, fn func() error) (int, error) 
 		}
 	}
 	return attempts, err
+}
+
+func runAttempt(ctx context.Context, timeout time.Duration, fn func(context.Context) error) error {
+	if timeout <= 0 {
+		return fn(ctx)
+	}
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return fn(attemptCtx)
+}
+
+// retryAttempt reports whether another try is worthwhile.
+// An item time limit is worth another try. Cancelling the capture is not.
+func retryAttempt(parent context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return parent.Err() == nil
+	}
+	return retryable(err)
 }
 
 type noRetry interface{ NoRetry() bool }

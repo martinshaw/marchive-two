@@ -20,11 +20,11 @@ func TestResolveEmptyKeepsEverything(t *testing.T) {
 		t.Fatalf("hacker news default = %+v", hn)
 	}
 	search := Resolve(KindGoogle, "")
-	if !search.Text || !search.Metadata || !search.Words || search.HTML || search.Screenshot {
+	if !search.Text || !search.Screenshot || !search.Metadata || !search.Words || search.HTML {
 		t.Fatalf("google default = %+v", search)
 	}
 	ddg := Resolve(KindDDG, "")
-	if !ddg.Text || !ddg.Metadata || !ddg.Words || ddg.HTML {
+	if !ddg.Text || !ddg.Screenshot || !ddg.Metadata || !ddg.Words || ddg.HTML {
 		t.Fatalf("duckduckgo default = %+v", ddg)
 	}
 }

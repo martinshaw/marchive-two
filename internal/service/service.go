@@ -16,6 +16,7 @@ import (
 	"github.com/martinshaw/marchive-two/internal/runner"
 	"github.com/martinshaw/marchive-two/internal/store"
 	"github.com/martinshaw/marchive-two/internal/supervise"
+	"github.com/martinshaw/marchive-two/internal/ytdlp"
 )
 
 // Error is a failure with an HTTP status.
@@ -49,34 +50,45 @@ type ScheduleInput struct {
 	LinkSelector     *string `json:"linkSelector"`
 }
 
-// SettingsInput changes concurrency, the UI port, and the login service.
+// SettingsInput changes concurrency, time limits, attempt counts, the UI port, and the login service.
 // ListenPort zero means a random port on the next start.
-// A nil login flag leaves that flag unchanged.
+// A nil field leaves that setting unchanged.
+// ItemTimeoutSeconds and CaptureTimeoutSeconds use zero for no time limit.
 type SettingsInput struct {
-	PodcastConcurrency *int  `json:"podcastConcurrency"`
-	BrowserConcurrency *int  `json:"browserConcurrency"`
-	ListenPort         *int  `json:"listenPort"`
-	OpenOnLogin        *bool `json:"openOnLogin"`
-	RestartOnCrash     *bool `json:"restartOnCrash"`
+	PodcastConcurrency    *int  `json:"podcastConcurrency"`
+	BrowserConcurrency    *int  `json:"browserConcurrency"`
+	ListenPort            *int  `json:"listenPort"`
+	ItemTimeoutSeconds    *int  `json:"itemTimeoutSeconds"`
+	CaptureTimeoutSeconds *int  `json:"captureTimeoutSeconds"`
+	ItemTries             *int  `json:"itemTries"`
+	CaptureTries          *int  `json:"captureTries"`
+	OpenOnLogin           *bool `json:"openOnLogin"`
+	RestartOnCrash        *bool `json:"restartOnCrash"`
 }
 
 // State is the snapshot rendered by the UI.
 type State struct {
-	RunnerEnabled      bool          `json:"runnerEnabled"`
-	SigningIn          bool          `json:"signingIn"`
-	BrowserBusy        bool          `json:"browserBusy"`
-	ChromePath         string        `json:"chromePath"`
-	ChromeError        string        `json:"chromeError"`
-	PodcastConcurrency int           `json:"podcastConcurrency"`
-	BrowserConcurrency int           `json:"browserConcurrency"`
-	ListenPort         int           `json:"listenPort"`
-	ActivePort         int           `json:"activePort"`
-	OpenOnLogin        bool          `json:"openOnLogin"`
-	RestartOnCrash     bool          `json:"restartOnCrash"`
-	DefaultFolder      string        `json:"defaultFolder"`
-	Sources            []SourceState `json:"sources"`
-	Runs               []RunState    `json:"runs"`
-	Error              string        `json:"error,omitempty"`
+	RunnerEnabled         bool          `json:"runnerEnabled"`
+	SigningIn             bool          `json:"signingIn"`
+	BrowserBusy           bool          `json:"browserBusy"`
+	ChromePath            string        `json:"chromePath"`
+	ChromeError           string        `json:"chromeError"`
+	PodcastConcurrency    int           `json:"podcastConcurrency"`
+	BrowserConcurrency    int           `json:"browserConcurrency"`
+	ListenPort            int           `json:"listenPort"`
+	ItemTimeoutSeconds    int           `json:"itemTimeoutSeconds"`
+	CaptureTimeoutSeconds int           `json:"captureTimeoutSeconds"`
+	ItemTries             int           `json:"itemTries"`
+	CaptureTries          int           `json:"captureTries"`
+	ActivePort            int           `json:"activePort"`
+	OpenOnLogin           bool          `json:"openOnLogin"`
+	RestartOnCrash        bool          `json:"restartOnCrash"`
+	YtDlpPath             string        `json:"ytDlpPath"`
+	YtDlpVersion          string        `json:"ytDlpVersion"`
+	DefaultFolder         string        `json:"defaultFolder"`
+	Sources               []SourceState `json:"sources"`
+	Runs                  []RunState    `json:"runs"`
+	Error                 string        `json:"error,omitempty"`
 }
 
 // SourceState is a source plus its schedules.
@@ -100,10 +112,11 @@ type Service struct {
 	ActivePort int
 	// DataDir is the directory the login service should keep using.
 	DataDir string
+	ytdlp   *ytdlp.Installer
 }
 
 func New(st *store.Store, run *runner.Runner, br *browser.Client) *Service {
-	return &Service{Store: st, Runner: run, Browser: br}
+	return &Service{Store: st, Runner: run, Browser: br, ytdlp: ytdlp.NewInstaller()}
 }
 
 func (s *Service) State() (State, error) {
@@ -124,6 +137,22 @@ func (s *Service) State() (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	st.ItemTimeoutSeconds, err = s.Store.ItemTimeoutSeconds()
+	if err != nil {
+		return State{}, err
+	}
+	st.CaptureTimeoutSeconds, err = s.Store.CaptureTimeoutSeconds()
+	if err != nil {
+		return State{}, err
+	}
+	st.ItemTries, err = s.Store.ItemTries()
+	if err != nil {
+		return State{}, err
+	}
+	st.CaptureTries, err = s.Store.CaptureTries()
+	if err != nil {
+		return State{}, err
+	}
 	st.ActivePort = s.ActivePort
 	st.OpenOnLogin, st.RestartOnCrash, err = supervise.Current()
 	if err != nil {
@@ -137,6 +166,7 @@ func (s *Service) State() (State, error) {
 	if s.Browser != nil {
 		st.BrowserBusy, st.SigningIn = s.Browser.Status()
 	}
+	st.YtDlpPath, st.YtDlpVersion = ytdlp.Status(s.DataDir)
 	sources, err := s.Store.ListSources()
 	if err != nil {
 		return State{}, err
@@ -384,6 +414,42 @@ func (s *Service) UpdateSettings(in SettingsInput) error {
 			return err
 		}
 	}
+	if in.ItemTimeoutSeconds != nil {
+		n := *in.ItemTimeoutSeconds
+		if n < 0 || n > store.MaxTimeoutSeconds {
+			return &Error{Status: 400, Msg: "Choose an item time limit from 0 to 86400 seconds. 0 means no time limit."}
+		}
+		if err := s.Store.SetItemTimeoutSeconds(n); err != nil {
+			return err
+		}
+	}
+	if in.CaptureTimeoutSeconds != nil {
+		n := *in.CaptureTimeoutSeconds
+		if n < 0 || n > store.MaxTimeoutSeconds {
+			return &Error{Status: 400, Msg: "Choose a capture time limit from 0 to 86400 seconds. 0 means no time limit."}
+		}
+		if err := s.Store.SetCaptureTimeoutSeconds(n); err != nil {
+			return err
+		}
+	}
+	if in.ItemTries != nil {
+		n := *in.ItemTries
+		if n < 1 || n > store.MaxAttempts {
+			return &Error{Status: 400, Msg: "Choose item attempts from 1 to 10. 1 means a single attempt."}
+		}
+		if err := s.Store.SetItemTries(n); err != nil {
+			return err
+		}
+	}
+	if in.CaptureTries != nil {
+		n := *in.CaptureTries
+		if n < 1 || n > store.MaxAttempts {
+			return &Error{Status: 400, Msg: "Choose capture attempts from 1 to 10. 1 means a single attempt."}
+		}
+		if err := s.Store.SetCaptureTries(n); err != nil {
+			return err
+		}
+	}
 	if err := s.Store.SetBrowserConcurrency(1); err != nil {
 		return err
 	}
@@ -457,26 +523,67 @@ func (s *Service) CancelChromeInstall() {
 	}
 }
 
+func (s *Service) YtDlpInstall() ytdlp.Snapshot {
+	if s == nil || s.ytdlp == nil {
+		return ytdlp.Snapshot{Phase: "idle", Message: "Marchive is not running."}
+	}
+	return s.ytdlp.Snapshot(s.DataDir)
+}
+
+func (s *Service) StartYtDlpInstall(update bool) error {
+	if s == nil || s.ytdlp == nil {
+		return &Error{Status: 409, Msg: "Marchive is not running."}
+	}
+	if err := s.ytdlp.Start(s.DataDir, update); err != nil {
+		return &Error{Status: 409, Msg: err.Error()}
+	}
+	return nil
+}
+
+func (s *Service) CancelYtDlpInstall() {
+	if s != nil && s.ytdlp != nil {
+		s.ytdlp.Cancel()
+	}
+}
+
 func (s *Service) OpenPath(target string) error {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return &Error{Status: 400, Msg: "missing path"}
-	}
-	abs, err := filepath.Abs(target)
-	if err != nil {
-		return &Error{Status: 400, Msg: err.Error()}
-	}
-	roots, err := s.Store.DownloadRoots()
+	abs, err := s.archivePath(target)
 	if err != nil {
 		return err
 	}
+	return openFolder(abs)
+}
+
+// FinderProxy is a small file a browser can drop outside its window.
+// Opening it reveals the archive folder in Finder.
+func (s *Service) FinderProxy(target string) ([]byte, error) {
+	abs, err := s.archivePath(target)
+	if err != nil {
+		return nil, err
+	}
+	return finderProxy(abs), nil
+}
+
+func (s *Service) archivePath(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", &Error{Status: 400, Msg: "missing path"}
+	}
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return "", &Error{Status: 400, Msg: err.Error()}
+	}
+	roots, err := s.Store.DownloadRoots()
+	if err != nil {
+		return "", err
+	}
 	if !insideAny(roots, abs) {
-		return &Error{Status: 400, Msg: "that folder is not one of your archive folders"}
+		return "", &Error{Status: 400, Msg: "that folder is not one of your archive folders"}
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return &Error{Status: 400, Msg: "that folder is not on disk yet"}
+		return "", &Error{Status: 400, Msg: "that folder is not on disk yet"}
 	}
-	return openFolder(abs)
+	return abs, nil
 }
 
 func (s *Service) kick() {

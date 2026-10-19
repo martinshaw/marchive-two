@@ -39,6 +39,9 @@ func CheckAddress(ctx context.Context, kind, rawURL string) (string, error) {
 	if kind == KindDDG {
 		return checkDuckDuckGo(rawURL)
 	}
+	if kind == KindYouTube {
+		return checkYouTube(ctx, rawURL)
+	}
 	limit := int64(pagePeekLimit)
 	if kind == KindPodcast {
 		limit = feedPeekLimit
@@ -134,6 +137,7 @@ var (
 	errNotHN        = errorString("Use a Hacker News list, such as https://news.ycombinator.com/newest, or a story address.")
 	errNotGoogle    = errorString("Use a Google search address, such as https://www.google.com/search?q=news.")
 	errNotDDG       = errorString("Use a DuckDuckGo search address, such as https://duckduckgo.com/?q=news.")
+	errNotYouTube   = errorString("Use a YouTube video address, such as https://www.youtube.com/watch?v=…")
 	errNotFeed      = errorString("This address did not return an RSS or Atom feed.")
 	errIsFeed       = errorString("This address is a podcast feed. Choose Podcast to capture it.")
 	errNotPage      = errorString("This address did not return a web page.")

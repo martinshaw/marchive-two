@@ -56,6 +56,7 @@ func Serve(ctx context.Context, opts Options) error {
 	br := browser.New(paths.Profile(opts.DataDir))
 	reg := provider.DefaultRegistry()
 	runr := runner.New(st, reg, br)
+	runr.SetDataDir(opts.DataDir)
 	svc := service.New(st, runr, br)
 	svc.DataDir = opts.DataDir
 	if err := svc.NestSourceCaptures(); err != nil {

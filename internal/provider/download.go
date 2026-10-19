@@ -57,9 +57,7 @@ func (e statusError) Error() string {
 func (e statusError) StatusCode() int { return e.code }
 
 func getBytes(ctx context.Context, client *http.Client, rawURL string, limit int64) ([]byte, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}

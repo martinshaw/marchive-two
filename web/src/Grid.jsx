@@ -1,5 +1,36 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+function safeDragName(name) {
+  const clean = String(name || "Archive").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+  return (clean || "Archive").slice(0, 80);
+}
+
+function fileURL(path) {
+  const slash = path.replaceAll("\\", "/");
+  const abs = slash.startsWith("/") ? slash : `/${slash}`;
+  return `file://${abs.split("/").map((part, index) => (index === 0 ? "" : encodeURIComponent(part))).join("/")}`;
+}
+
+function startFinderDrag(event, row) {
+  const path = row.dragPath;
+  if (!path) return;
+  const platform = navigator.platform || "";
+  const ext = platform.startsWith("Win") || path.includes("\\") ? ".url" : (platform.startsWith("Linux") ? ".desktop" : ".inetloc");
+  const file = `${safeDragName(row.dragName)}${ext}`;
+  const endpoint = new URL("/api/finder", window.location.origin);
+  endpoint.searchParams.set("path", path);
+  event.dataTransfer.effectAllowed = "copy";
+  event.dataTransfer.setData("text/plain", path);
+  event.dataTransfer.setData("text/uri-list", fileURL(path));
+  event.dataTransfer.setData("DownloadURL", `application/octet-stream:${file}:${endpoint}`);
+  const ghost = document.createElement("div");
+  ghost.className = "drag-proxy";
+  ghost.textContent = row.dragName || file;
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, 12, 12);
+  event.currentTarget.addEventListener("dragend", () => ghost.remove(), { once: true });
+}
+
 function sortValue(sort, text) {
   const raw = String(sort != null && sort !== "" ? sort : text || "").trim();
   if (!raw) return { empty: true, num: null, text: "" };
@@ -164,6 +195,8 @@ export function Grid({ columns, rows, visible, empty, onActivate, onOrder }) {
                 onActivate?.(row, false, event, orderedKeys);
               }}
               onDoubleClick={() => { if (row.visible) onActivate?.(row, true, null, orderedKeys); }}
+              draggable={row.dragPath ? "true" : undefined}
+              onDragStart={(event) => startFinderDrag(event, row)}
             >
               {row.cells.map((cell, index) => (
                 <td key={columns[index].label} className={cell.className || undefined}>{cell.node}</td>

@@ -24,7 +24,12 @@ func fetchTweetMedia(ctx context.Context, postURL string) []xMedia {
 		return nil
 	}
 	endpoint := "https://cdn.syndication.twimg.com/tweet-result?id=" + url.QueryEscape(id) + "&lang=en"
-	body, err := getBytes(ctx, mediaClient, endpoint, 2<<20)
+	var body []byte
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
+		var getErr error
+		body, getErr = getBytes(ctx, mediaClient, endpoint, 2<<20)
+		return getErr
+	})
 	if err != nil {
 		return nil
 	}
@@ -364,7 +369,11 @@ func saveTweetMedia(ctx context.Context, dir string, media []xMedia) error {
 		}
 		count[item.Kind]++
 		stem := item.Kind + "-" + strconv.Itoa(count[item.Kind])
-		if _, err := downloadNamed(ctx, mediaClient, item.URL, dir, stem, item.Kind); err != nil {
+		_, err := withRetry(ctx, 1, func(ctx context.Context) error {
+			_, err := downloadNamed(ctx, mediaClient, item.URL, dir, stem, item.Kind)
+			return err
+		})
+		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}

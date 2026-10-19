@@ -29,7 +29,7 @@ func (XTrending) Run(ctx context.Context, req Request) (Summary, error) {
 	capture := Resolve(req.Source.Provider, req.Source.Capture)
 	var doc *browser.Document
 	// A visible window is required. X answers HTTP 403 to the headless one.
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var fetchErr error
 		doc, fetchErr = req.Fetch.Fetch(ctx, req.Source.URL, browser.Options{Scroll: true, Headed: true})
 		return fetchErr
@@ -49,7 +49,12 @@ func (XTrending) Run(ctx context.Context, req Request) (Summary, error) {
 			if err := ctx.Err(); err != nil {
 				return Summary{}, err
 			}
-			topicDoc, ferr := req.Fetch.Fetch(ctx, topic, browser.Options{Scroll: true, Headed: true})
+			var topicDoc *browser.Document
+			_, ferr := withRetry(ctx, 1, func(ctx context.Context) error {
+				var fetchErr error
+				topicDoc, fetchErr = req.Fetch.Fetch(ctx, topic, browser.Options{Scroll: true, Headed: true})
+				return fetchErr
+			})
 			if ferr != nil {
 				continue
 			}

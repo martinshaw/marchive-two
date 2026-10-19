@@ -18,11 +18,12 @@ const (
 	KindHN       = "hn_entry"
 	KindGoogle   = "google_search"
 	KindDDG      = "ddg_search"
+	KindYouTube  = "youtube_video"
 )
 
 // KindHint is the message shown when a source kind is missing or unknown.
 func KindHint() string {
-	return "choose a webpage, article index, podcast, text extract, X trending, Hacker News entry, Google search, or DuckDuckGo search"
+	return "choose a webpage, article index, podcast, text extract, X trending, Hacker News entry, Google search, DuckDuckGo search, or YouTube video"
 }
 
 // Summary is the outcome of one capture, even when individual items fail.
@@ -39,6 +40,8 @@ type Request struct {
 	Store              *store.Store
 	Fetch              browser.Fetcher
 	PodcastConcurrency int
+	// DataDir is the app data directory. YouTube captures keep yt-dlp there.
+	DataDir string
 }
 
 // Provider captures one kind of source.
@@ -66,6 +69,7 @@ func DefaultRegistry() *Registry {
 	r.Register(HackerNews{})
 	r.Register(GoogleSearch{})
 	r.Register(DuckDuckGo{})
+	r.Register(YouTube{})
 	return r
 }
 
@@ -83,7 +87,7 @@ func (r *Registry) Get(kind string) (Provider, bool) {
 
 func ValidKind(kind string) bool {
 	switch kind {
-	case KindWebpage, KindArticles, KindPodcast, KindText, KindTrending, KindHN, KindGoogle, KindDDG:
+	case KindWebpage, KindArticles, KindPodcast, KindText, KindTrending, KindHN, KindGoogle, KindDDG, KindYouTube:
 		return true
 	default:
 		return false
@@ -108,6 +112,8 @@ func Label(kind string) string {
 		return "Google search"
 	case KindDDG:
 		return "DuckDuckGo"
+	case KindYouTube:
+		return "YouTube video"
 	default:
 		return kind
 	}

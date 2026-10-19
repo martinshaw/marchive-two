@@ -40,6 +40,10 @@ func New(svc *service.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	mux.Handle("GET /assets/", http.FileServer(http.FS(ui)))
+	mux.HandleFunc("GET /manifest.webmanifest", uiFile("manifest.webmanifest", "application/manifest+json"))
+	mux.HandleFunc("GET /sw.js", uiFile("sw.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /icon-192.png", uiFile("icon-192.png", "image/png"))
+	mux.HandleFunc("GET /icon-512.png", uiFile("icon-512.png", "image/png"))
 	mux.HandleFunc("GET /{$}", h.page)
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/state", h.state)
@@ -70,8 +74,13 @@ func New(svc *service.Service) http.Handler {
 	mux.HandleFunc("GET /api/chrome", h.chromeStatus)
 	mux.HandleFunc("POST /api/chrome/install", h.chromeInstall)
 	mux.HandleFunc("POST /api/chrome/install/cancel", h.chromeCancel)
+	mux.HandleFunc("GET /api/ytdlp", h.ytdlpStatus)
+	mux.HandleFunc("POST /api/ytdlp/install", h.ytdlpInstall)
+	mux.HandleFunc("POST /api/ytdlp/update", h.ytdlpUpdate)
+	mux.HandleFunc("POST /api/ytdlp/install/cancel", h.ytdlpCancel)
 	mux.HandleFunc("POST /api/open", h.openPath)
 	mux.HandleFunc("POST /open", h.openPath)
+	mux.HandleFunc("GET /api/finder", h.finderProxy)
 	mux.HandleFunc("GET /api/items/{id}/files/{name}", h.itemFile)
 	mux.HandleFunc("GET /api/items/{id}/files", h.itemFiles)
 	mux.HandleFunc("GET /api/items/{id}/words", h.itemWords)
@@ -82,6 +91,20 @@ func New(svc *service.Service) http.Handler {
 
 type handler struct {
 	svc *service.Service
+}
+
+func uiFile(name, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := uiAssets.ReadFile("ui/dist/" + name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(data)
+	}
 }
 
 func (h *handler) page(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +457,31 @@ func (h *handler) chromeCancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.ChromeInstall())
 }
 
+func (h *handler) ytdlpStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.YtDlpInstall())
+}
+
+func (h *handler) ytdlpInstall(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.StartYtDlpInstall(false); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, h.svc.YtDlpInstall())
+}
+
+func (h *handler) ytdlpUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.StartYtDlpInstall(true); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, h.svc.YtDlpInstall())
+}
+
+func (h *handler) ytdlpCancel(w http.ResponseWriter, r *http.Request) {
+	h.svc.CancelYtDlpInstall()
+	writeJSON(w, http.StatusOK, h.svc.YtDlpInstall())
+}
+
 func (h *handler) itemFiles(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -571,6 +619,25 @@ func (h *handler) openPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.done(w, r, map[string]bool{"ok": true})
+}
+
+func (h *handler) finderProxy(w http.ResponseWriter, r *http.Request) {
+	body, err := h.svc.FinderProxy(r.URL.Query().Get("path"))
+	if err != nil {
+		status := http.StatusBadRequest
+		var se *service.Error
+		if errors.As(err, &se) {
+			status = se.Status
+		} else if !errors.Is(err, store.ErrNotFound) {
+			status = http.StatusInternalServerError
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(body)
 }
 
 func (h *handler) done(w http.ResponseWriter, r *http.Request, body any) {
