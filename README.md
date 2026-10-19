@@ -1,8 +1,8 @@
 # Marchive
 
-Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, or search results from Google and DuckDuckGo. One Go binary runs the scheduler, the capture jobs, and the UI.
+Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, search results from Google and DuckDuckGo, or a YouTube video. One Go binary runs the scheduler, the capture jobs, and the UI.
 
-Version 0.2.3.
+Version 0.2.5.
 
 ## Contents
 
