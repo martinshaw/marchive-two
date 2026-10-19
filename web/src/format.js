@@ -53,6 +53,7 @@ export function providerLabel(kind) {
   if (kind === "hn_entry") return "Hacker News entry";
   if (kind === "google_search") return "Google search";
   if (kind === "ddg_search") return "DuckDuckGo";
+  if (kind === "youtube_video") return "YouTube video";
   return kind || "";
 }
 
@@ -68,14 +69,22 @@ export function itemKindLabel(kind) {
 }
 
 export function fileLabel(file) {
+  const base = file.name || "";
+  if (/^audio\./i.test(base)) return "Audio";
+  if (/^video\./i.test(base)) return "Video";
+  if (/^subtitles\./i.test(base)) return "Subtitles";
   const names = {
     "text.txt": "Text",
     "article.html": "Article",
     "page.html": "Page",
+    "results.jpg": "Results page",
     "screenshot.jpg": "Screenshot",
     "metadata.json": "Details",
     "words.json": "Word index",
     "comments.txt": "Comments",
+    "comments.json": "Comments",
+    "subtitles.vtt": "Subtitles",
+    "subtitles.srt": "Subtitles",
     "site.txt": "Linked site",
     "snapshot.mhtml": "Archive",
   };
@@ -113,6 +122,7 @@ const CAPTURE_PARTS = [
   { key: "comments", kinds: ["hn_entry"], label: "Comments" },
   { key: "screenshot", kinds: ["webpage", "article_index"], label: "Screenshot" },
   { key: "screenshot", kinds: ["hn_entry"], label: "Linked site screenshot" },
+  { key: "screenshot", kinds: ["google_search", "ddg_search"], label: "Results page and linked page" },
   { key: "mhtml", kinds: ["webpage", "article_index"], label: "Page archive" },
   { key: "audio", kinds: ["podcast"], label: "Episode audio" },
   { key: "media", kinds: ["x_trending"], label: "Images, audio, and video" },
@@ -125,6 +135,12 @@ const CAPTURE_PARTS = [
   { key: "metadata", kinds: ["hn_entry"], label: "Title, author, score, and address" },
   { key: "metadata", kinds: ["google_search", "ddg_search"], label: "Title, snippet, and address" },
   { key: "metadata", kinds: ["podcast"], label: "Episode details" },
+  { key: "metadata", kinds: ["youtube_video"], label: "Details and description" },
+  { key: "subtitles", kinds: ["youtube_video"], label: "Subtitles" },
+  { key: "video", kinds: ["youtube_video"], label: "Video" },
+  { key: "audio", kinds: ["youtube_video"], label: "Audio" },
+  { key: "comments", kinds: ["youtube_video"], label: "Comments" },
+  { key: "screenshot", kinds: ["youtube_video"], label: "Watch page" },
 ];
 
 export function captureParts(kind) {
@@ -135,17 +151,32 @@ export function parseCapture(raw) {
   if (!raw) return { all: true };
   try {
     const stored = JSON.parse(raw);
-    if (!stored || stored.all) return { all: true };
+    if (!stored) return { all: true };
+    if (stored.all) {
+      return {
+        all: true,
+        videoQuality: stored.videoQuality,
+        audioFormat: stored.audioFormat,
+        commentLimit: stored.commentLimit,
+      };
+    }
     return stored;
   } catch {
     return { all: true };
   }
 }
 
-export function encodeCapture(all, keys) {
-  if (all) return '{"all":true}';
+export function encodeCapture(all, keys, options) {
   const chosen = {};
-  keys.forEach((key) => { chosen[key] = true; });
+  if (all) chosen.all = true;
+  else (keys || []).forEach((key) => { chosen[key] = true; });
+  const quality = options && options.videoQuality;
+  const audio = options && options.audioFormat;
+  const comments = options && options.commentLimit;
+  if (quality && quality !== "high") chosen.videoQuality = quality;
+  if (audio && audio !== "best") chosen.audioFormat = audio;
+  if (comments && comments !== "all") chosen.commentLimit = String(comments);
+  if (chosen.all && Object.keys(chosen).length === 1) return '{"all":true}';
   return JSON.stringify(chosen);
 }
 

@@ -1,8 +1,8 @@
 # Marchive
 
-Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, or search results from Google and DuckDuckGo. One Go binary runs the scheduler, the capture jobs, and the UI.
+Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, search results from Google and DuckDuckGo, or a YouTube video. One Go binary runs the scheduler, the capture jobs, and the UI.
 
-Version 0.2.3.
+Version 0.2.5.
 
 ## Contents
 
@@ -79,10 +79,15 @@ Each source has a kind and a schedule.
 - **Text extract.** Readable text and metadata when the page changes.
 - **X trending.** New posts from a trending, news, sports, entertainment, or other X page. Each post keeps its text, author, hashtags, and words, plus any images, audio, and video attached to it. Sign in with Chrome on the Marchive profile first. News, Sports, and Entertainment list topics; Marchive opens a few of those pages and saves the posts.
 - **Hacker News entry.** New stories from Newest, the front page, Best, Ask, Show, or Jobs. Each story keeps its text, comments, score, author, and word index. When the story links to a website, Marchive also saves a screenshot and the readable text of that site. The word index includes the story, the comments, and the linked site.
-- **Google search.** New organic results from a Google search address. Each result keeps its title, address, snippet, details, and word index.
+- **Google search.** New organic results from a Google search address. Each result keeps its title, address, snippet, details, and word index, plus a screenshot of the results page and of the linked page.
 - **DuckDuckGo.** New organic results from a DuckDuckGo search address, saved the same way as Google results.
+- **YouTube video.** One watch, shorts, or youtu.be address. Each video can keep its description, a subtitle file, a low, medium, or high picture, an audio file (best, M4A, or Opus), and comments. Comments can be all of them or a chosen number. yt-dlp downloads those files. Chrome saves a picture of the watch page and, when you have signed in on the Marchive profile, passes those cookies to yt-dlp.
 
-For each kind, choose **All data** or the individual parts to keep. Webpage, article, X, Hacker News screenshot, and search captures use Chrome. Podcast audio does not. Hacker News story text and comments come from the Hacker News API and do not need Chrome unless a screenshot is selected.
+For each kind, choose **All data** or the individual parts to keep. Webpage, article, X, Hacker News screenshot, search, and YouTube watch-page captures use Chrome. Podcast audio does not. Hacker News story text and comments come from the Hacker News API and do not need Chrome unless a screenshot is selected. YouTube files come from yt-dlp.
+
+## yt-dlp
+
+YouTube captures need the yt-dlp program. Adding a YouTube source asks for it before the source is saved. Settings and the Marchive menu can download it too. The current release for this computer is stored in Marchive's data folder, next to the Chrome profile. Update replaces that copy with the current release. The download can be cancelled while it is in progress.
 
 The archive folder defaults to `Marchive` in your home directory. The first run of an article list or podcast takes at most 20 new items. Raise “new items per run”, or pass `--max-new 0`, to take more. `0` means no limit. The shortest schedule interval is 30 seconds.
 
@@ -100,7 +105,11 @@ Settings are saved in the database.
 
 - **Podcast downloads at once.** How many episode files download together inside one capture, from 1 to 6.
 - **Browser captures at once.** Stays at one, so captures can share the signed-in Chrome profile.
-- **UI port.** Random picks a free localhost port each time Marchive starts. A fixed port, from 1 to 65535, is used the next time it starts. The page shows the port this session is using.
+- **Item time limit.** Seconds allowed for one page, file, or request. 0 means no time limit. The longest stored limit is 24 hours.
+- **Capture time limit.** Seconds allowed for the whole capture. 0 means no time limit. The longest stored limit is 24 hours.
+- **Item attempts.** How many times to try one page, file, or request, from 1 to 10. 1 means a single attempt.
+- **Capture attempts.** How many times to try the whole capture, from 1 to 10. 1 means a single attempt. Cancelling a capture does not use another attempt.
+- **UI port.** Random picks a free localhost port each time Marchive starts. A fixed port, from 1 to 65535, is used the next time it starts. The page shows the port this session is using. Install Marchive from the browser after choosing a fixed port, so the installed app keeps opening the same address.
 - **Open on login.** Starts Marchive when you sign in.
 - **Restart on crash.** That same service starts Marchive again if it crashes.
 

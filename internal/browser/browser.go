@@ -21,8 +21,12 @@ type Options struct {
 	Screenshot bool
 	MHTML      bool
 	Scroll     bool
-	// Headed opens a visible window. X answers HTTP 403 to the headless window.
+	// Headed opens a visible window. X and Google answer a headless window with a block page.
 	Headed bool
+	// ReadyJS is polled until it returns true. The page is still snapshotted if it never becomes ready.
+	ReadyJS string
+	// ResolveHrefs follows Google /goto links and writes the destination on each anchor.
+	ResolveHrefs bool
 }
 
 // Document is the rendered page Chrome returned.
@@ -126,10 +130,8 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 		c.mu.Unlock()
 	}()
 
-	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-
-	allocCtx, allocCancel, err := c.allocator(fetchCtx, bin, opt.Headed)
+	// The caller owns the time limit. Settings decide how long one request and the whole capture may run.
+	allocCtx, allocCancel, err := c.allocator(ctx, bin, opt.Headed)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +152,12 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 		chromedp.Evaluate(dismissCookieJS, nil),
 		chromedp.ActionFunc(func(ctx context.Context) error { return load.wait(ctx) }),
 	}
+	if strings.TrimSpace(opt.ReadyJS) != "" {
+		script := opt.ReadyJS
+		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+			return waitReady(ctx, script)
+		}))
+	}
 	if opt.Scroll {
 		actions = append(actions,
 			chromedp.Evaluate(scrollJS, nil),
@@ -158,6 +166,11 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opt Options) (*Docume
 			chromedp.ActionFunc(func(ctx context.Context) error { return load.wait(ctx) }),
 			chromedp.Evaluate(`window.scrollTo(0, 0)`, nil),
 		)
+	}
+	if opt.ResolveHrefs {
+		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+			return revealGotoLinks(ctx)
+		}))
 	}
 	actions = append(actions,
 		chromedp.Location(&finalURL),

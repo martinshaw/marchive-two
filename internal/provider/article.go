@@ -22,7 +22,7 @@ func (ArticleIndex) Run(ctx context.Context, req Request) (Summary, error) {
 		return Summary{}, err
 	}
 	var index *browser.Document
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var fetchErr error
 		index, fetchErr = req.Fetch.Fetch(ctx, req.Source.URL, browser.Options{Scroll: true})
 		return fetchErr
@@ -77,7 +77,7 @@ var errNotArticle = errors.New("not an article")
 
 func captureArticle(ctx context.Context, req Request, link string) error {
 	var doc *browser.Document
-	attempts, err := withRetry(ctx, 3, func() error {
+	attempts, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var fetchErr error
 		doc, fetchErr = req.Fetch.Fetch(ctx, link, articleFetchOptions(req))
 		return fetchErr

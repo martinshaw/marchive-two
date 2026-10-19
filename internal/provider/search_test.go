@@ -6,7 +6,32 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/martinshaw/marchive-two/internal/browser"
 )
+
+type shotFetch struct {
+	html  string
+	shot  []byte
+	fail  map[string]bool
+	urls  []string
+	shots int
+}
+
+func (f *shotFetch) Fetch(_ context.Context, raw string, opt browser.Options) (*browser.Document, error) {
+	f.urls = append(f.urls, raw)
+	if opt.Screenshot {
+		f.shots++
+	}
+	if f.fail[raw] {
+		return nil, os.ErrNotExist
+	}
+	var shot []byte
+	if opt.Screenshot {
+		shot = f.shot
+	}
+	return &browser.Document{URL: raw, HTML: f.html, Screenshot: shot}, nil
+}
 
 const googleHTML = `<html><body>
 <div class="g">
@@ -58,6 +83,78 @@ func TestGoogleHitsSkipAdsAndUnwrapLinks(t *testing.T) {
 	}
 	if hits[1].Title != "News item" || hits[1].URL != "https://news.example/item" || hits[1].Rank != 2 {
 		t.Fatalf("second %+v", hits[1])
+	}
+}
+
+func TestGoogleHitsReadHeadingLayouts(t *testing.T) {
+	const page = `<html><body>
+<div id="tads"><div class="g"><a href="https://ads.example/buy"><h3>Buy now</h3></a></div></div>
+<div class="g">
+  <h3><a href="https://example.com/old?utm_source=google">Old title</a></h3>
+  <div class="VwiC3b">Old snippet.</div>
+</div>
+<div class="MjjYud">
+  <a href="https://example.com/role">
+    <div role="heading" aria-level="3">Role title</div>
+  </a>
+  <div class="VwiC3b">Role snippet.</div>
+</div>
+</body></html>`
+	hits := parseSearch(KindGoogle, page, "https://www.google.com/search?q=trump")
+	if len(hits) != 2 {
+		t.Fatalf("hits %d %+v", len(hits), hits)
+	}
+	if hits[0].Title != "Old title" || hits[0].URL != "https://example.com/old" || hits[0].Snippet != "Old snippet." {
+		t.Fatalf("old %+v", hits[0])
+	}
+	if hits[1].Title != "Role title" || hits[1].URL != "https://example.com/role" || hits[1].Snippet != "Role snippet." {
+		t.Fatalf("role %+v", hits[1])
+	}
+}
+
+func TestGoogleGotoUsesSavedAddressOrCite(t *testing.T) {
+	const page = `<html><body>
+<div class="g">
+  <a href="/goto?url=abc" data-marchive-url="https://en.wikipedia.org/wiki/Donald_Trump?utm_source=google">
+    <h3>Donald Trump</h3>
+    <cite>https://en.wikipedia.org › wiki › Donald_Trump</cite>
+  </a>
+  <div class="VwiC3b">A biography.</div>
+</div>
+<div class="g">
+  <a href="/goto?url=def">
+    <h3>Reuters topic</h3>
+    <cite>https://www.reuters.com › world › donald-trump</cite>
+  </a>
+  <div class="VwiC3b">News.</div>
+</div>
+<div class="g">
+  <a href="/goto?url=ghi">
+    <h3>Cut off</h3>
+    <cite>https://example.com › people › donald...</cite>
+  </a>
+</div>
+</body></html>`
+	hits := parseSearch(KindGoogle, page, "https://www.google.com/search?q=Trump")
+	if len(hits) != 2 {
+		t.Fatalf("hits %d %+v", len(hits), hits)
+	}
+	if hits[0].URL != "https://en.wikipedia.org/wiki/Donald_Trump" || hits[0].Snippet != "A biography." {
+		t.Fatalf("saved %+v", hits[0])
+	}
+	if hits[1].URL != "https://www.reuters.com/world/donald-trump" || hits[1].Title != "Reuters topic" {
+		t.Fatalf("cite %+v", hits[1])
+	}
+}
+
+func TestGoogleBlockedPage(t *testing.T) {
+	sorry := &browser.Document{URL: "https://www.google.com/sorry/index?continue=1", HTML: `<html><body>unusual traffic</body></html>`}
+	if !googleBlocked(sorry) {
+		t.Fatal("sorry page should be blocked")
+	}
+	results := &browser.Document{URL: "https://www.google.com/search?q=Trump", HTML: googleHTML}
+	if googleBlocked(results) {
+		t.Fatal("results page should not be blocked")
 	}
 }
 
@@ -138,6 +235,98 @@ func TestGoogleRunSavesEachNewResult(t *testing.T) {
 	}
 	if again.Note != "0 new, 2 already archived, 0 failed" {
 		t.Fatalf("again %q", again.Note)
+	}
+}
+
+func TestSearchSavesResultsPageAndLinkedPage(t *testing.T) {
+	st, req := testReq(t, KindGoogle)
+	req.Source.URL = "https://www.google.com/search?q=city+lights"
+	fetch := &shotFetch{html: googleHTML, shot: []byte("jpeg-bytes")}
+	req.Fetch = fetch
+	if _, err := (GoogleSearch{}).Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if len(fetch.urls) != 3 || fetch.urls[0] != req.Source.URL || fetch.shots != 3 {
+		t.Fatalf("fetches %+v shots %d", fetch.urls, fetch.shots)
+	}
+	located, err := st.ListLocatedItems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := st.GetItem(located[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := os.ReadFile(filepath.Join(item.DownloadLocation, "results.jpg"))
+	if err != nil || string(results) != "jpeg-bytes" {
+		t.Fatalf("results page %q %v", results, err)
+	}
+	linked, err := os.ReadFile(filepath.Join(item.DownloadLocation, "screenshot.jpg"))
+	if err != nil || string(linked) != "jpeg-bytes" {
+		t.Fatalf("linked page %q %v", linked, err)
+	}
+	if err := os.Remove(filepath.Join(item.DownloadLocation, "screenshot.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	fetch.shot = []byte("newer")
+	before := len(fetch.urls)
+	again, err := GoogleSearch{}.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Note != "0 new, 2 already archived, 0 failed" {
+		t.Fatalf("again %q", again.Note)
+	}
+	if len(fetch.urls)-before != 2 {
+		t.Fatalf("backfill fetches %v", fetch.urls[before:])
+	}
+	linked, err = os.ReadFile(filepath.Join(item.DownloadLocation, "screenshot.jpg"))
+	if err != nil || string(linked) != "newer" {
+		t.Fatalf("restored %q %v", linked, err)
+	}
+	results, err = os.ReadFile(filepath.Join(item.DownloadLocation, "results.jpg"))
+	if err != nil || string(results) != "jpeg-bytes" {
+		t.Fatalf("results page changed %q %v", results, err)
+	}
+}
+
+func TestSearchKeepsResultWhenLinkedPageHasNoScreenshot(t *testing.T) {
+	st, req := testReq(t, KindDDG)
+	req.Source.URL = "https://duckduckgo.com/?q=city+lights"
+	fetch := &shotFetch{html: ddgHTML, shot: []byte("serp"), fail: map[string]bool{"https://news.example/item": true}}
+	req.Fetch = fetch
+	summary, err := DuckDuckGo{}.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Note != "2 new, 0 already archived, 0 failed" {
+		t.Fatalf("note %q", summary.Note)
+	}
+	located, err := st.ListLocatedItems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missed bool
+	for _, loc := range located {
+		item, err := st.GetItem(loc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(item.DownloadLocation, "results.jpg")); err != nil {
+			t.Fatalf("results page missing for %s", item.URL)
+		}
+		_, shotErr := os.Stat(filepath.Join(item.DownloadLocation, "screenshot.jpg"))
+		if item.URL == "https://news.example/item" {
+			missed = true
+			if !os.IsNotExist(shotErr) {
+				t.Fatal("failed page still saved a screenshot")
+			}
+		} else if shotErr != nil {
+			t.Fatalf("screenshot %s %v", item.URL, shotErr)
+		}
+	}
+	if !missed {
+		t.Fatal("missing failed result")
 	}
 }
 

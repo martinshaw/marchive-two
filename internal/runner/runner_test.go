@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -137,6 +138,160 @@ func TestStopCancelsQueued(t *testing.T) {
 	}
 	if got.Status != store.StatusCancelled {
 		t.Fatalf("queued run status %s", got.Status)
+	}
+}
+
+func TestCaptureTriesOnceByDefault(t *testing.T) {
+	st := openStore(t)
+	calls := 0
+	reg := provider.NewRegistry()
+	reg.Register(scripted{kind: provider.KindWebpage, run: func(context.Context, provider.Request) (provider.Summary, error) {
+		calls++
+		return provider.Summary{}, errors.New("still down")
+	}})
+	runr := New(st, reg, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runr.Start(ctx)
+	defer func() {
+		cancel()
+		runr.Shutdown()
+	}()
+	id, err := runr.RunNow(add(t, st, provider.KindWebpage, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, st, id, store.StatusFailed)
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
+	}
+}
+
+func TestCaptureAttemptsStopAfterSuccess(t *testing.T) {
+	st := openStore(t)
+	if err := st.SetCaptureTries(3); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetItemTries(4); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetItemTimeoutSeconds(12); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	reg := provider.NewRegistry()
+	reg.Register(scripted{kind: provider.KindWebpage, run: func(ctx context.Context, _ provider.Request) (provider.Summary, error) {
+		calls++
+		timeout, tries := provider.ItemBudget(ctx)
+		if timeout != 12*time.Second || tries != 4 {
+			return provider.Summary{}, errors.New("limits were not passed to the capture")
+		}
+		if calls < 2 {
+			return provider.Summary{}, errors.New("not yet")
+		}
+		return provider.Summary{Note: "ok"}, nil
+	}})
+	runr := New(st, reg, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runr.Start(ctx)
+	defer func() {
+		cancel()
+		runr.Shutdown()
+	}()
+	id, err := runr.RunNow(add(t, st, provider.KindWebpage, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := waitStatus(t, st, id, store.StatusSucceeded)
+	if got.Note != "ok" || calls != 2 {
+		t.Fatalf("note %q calls %d", got.Note, calls)
+	}
+}
+
+func TestCaptureTimeoutUsesEachAttempt(t *testing.T) {
+	st := openStore(t)
+	if err := st.SetCaptureTimeoutSeconds(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCaptureTries(2); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	reg := provider.NewRegistry()
+	reg.Register(scripted{kind: provider.KindWebpage, run: func(ctx context.Context, _ provider.Request) (provider.Summary, error) {
+		calls++
+		<-ctx.Done()
+		return provider.Summary{}, ctx.Err()
+	}})
+	runr := New(st, reg, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runr.Start(ctx)
+	defer func() {
+		cancel()
+		runr.Shutdown()
+	}()
+	id, err := runr.RunNow(add(t, st, provider.KindWebpage, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	var last store.Run
+	for time.Now().Before(deadline) {
+		last, err = st.GetRun(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if last.Status == store.StatusFailed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if last.Status != store.StatusFailed || calls != 2 {
+		t.Fatalf("status %s calls %d err %s", last.Status, calls, last.Error)
+	}
+}
+
+func TestCancelDoesNotRetryCapture(t *testing.T) {
+	st := openStore(t)
+	if err := st.SetCaptureTries(3); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	calls := 0
+	reg := provider.NewRegistry()
+	reg.Register(scripted{kind: provider.KindWebpage, run: func(ctx context.Context, _ provider.Request) (provider.Summary, error) {
+		calls++
+		if calls == 1 {
+			close(started)
+		}
+		<-ctx.Done()
+		return provider.Summary{}, ctx.Err()
+	}})
+	runr := New(st, reg, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runr.Start(ctx)
+	defer func() {
+		cancel()
+		runr.Shutdown()
+	}()
+	id, err := runr.RunNow(add(t, st, provider.KindWebpage, time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("capture did not start")
+	}
+	if err := runr.Cancel(id); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, st, id, store.StatusCancelled)
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
 	}
 }
 

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { send } from "./api.js";
 import { intervalSeconds } from "./format.js";
 import { CaptureFields } from "./Sheets.jsx";
 import { Icon } from "./sprite.jsx";
+import { YtDlpStep } from "./YtDlpAlert.jsx";
 
 const X_PAGES = [
   { id: "trending", label: "Global Trending", url: "https://x.com/explore/tabs/trending" },
@@ -75,8 +76,9 @@ const KINDS = [
   { id: "text_extract", title: "Text", icon: "#i-text", tone: "tone-text", text: "The readable text and details from a page, without a full snapshot." },
   { id: "x_trending", title: "X / Twitter Trending", icon: "#i-trend", tone: "tone-x", text: "Trending posts on X. Each new post is saved with its text, author, hashtags, words, and any images, audio, or video. Sign in with Chrome first." },
   { id: "hn_entry", title: "Hacker News entry", icon: "#i-hn", tone: "tone-hn", text: "New stories from Hacker News. Each one keeps its comments, details, word index, and a screenshot when the story links to a site." },
-  { id: "google_search", title: "Google search", icon: "#i-google", tone: "tone-google", text: "Organic results from a Google search. Each new result keeps its title, address, snippet, details, and word index." },
+  { id: "google_search", title: "Google search", icon: "#i-google", tone: "tone-google", text: "Organic results from a Google search. Each new result keeps its title, address, snippet, details, word index, and screenshots of the results page and the linked page." },
   { id: "ddg_search", title: "DuckDuckGo", icon: "#i-ddg", tone: "tone-ddg", text: "Organic results from a DuckDuckGo search, saved the same way as Google results." },
+  { id: "youtube_video", title: "YouTube video", icon: "#i-youtube", tone: "tone-youtube", text: "One YouTube video. Saves the description, subtitles, a video file, an audio file, and comments. Chrome takes the watch-page picture and signed-in cookies." },
 ];
 
 function blank(folder) {
@@ -91,20 +93,29 @@ function checkFailure(err) {
   return message || "This address cannot be captured.";
 }
 
-export function AddSheet({ open, folder, onClose, onSubmit }) {
+export function AddSheet({ open, folder, ytDlpReady, onYtDlpInstalled, onClose, onSubmit }) {
   const [form, setForm] = useState(blank(folder));
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState("kind");
   const [query, setQuery] = useState("");
+  const [toolReady, setToolReady] = useState(!!ytDlpReady);
   const [check, setCheck] = useState({ state: "idle", url: "", provider: "", message: "" });
   const flush = useRef(false);
   const [tick, setTick] = useState(0);
+  const markTool = useCallback(() => {
+    setToolReady(true);
+    if (onYtDlpInstalled) onYtDlpInstalled();
+  }, [onYtDlpInstalled]);
   useEffect(() => {
     if (!open) return;
     setForm(blank(folder));
-    setStep(1);
+    setStep("kind");
+    setToolReady(!!ytDlpReady);
     setQuery("");
     setCheck({ state: "idle", url: "", provider: "", message: "" });
   }, [open, folder]);
+  useEffect(() => {
+    if (open && ytDlpReady) setToolReady(true);
+  }, [open, ytDlpReady]);
 
   const url = form.url.trim();
   const checkedKey = useRef("");
@@ -112,7 +123,7 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
   const searching = isSearchKind(form.provider);
   const pageLabel = picks && form.page !== "custom" ? pageById(picks, form.page).label : "";
   useEffect(() => {
-    if (!open || step !== 2) return undefined;
+    if (!open || step !== "details") return undefined;
     if (!url || !form.provider) {
       checkedKey.current = "";
       setCheck({ state: "idle", url: "", provider: form.provider, message: "" });
@@ -199,19 +210,27 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
   }
   const needle = query.trim().toLowerCase();
   const kinds = KINDS.filter((kind) => !needle || `${kind.title} ${kind.text}`.toLowerCase().includes(needle));
+  const chosen = KINDS.find((kind) => kind.id === form.provider);
   const seconds = intervalSeconds(form.every, form.unit);
   const once = form.unit === "once";
   const everyOk = once || (Number.isFinite(seconds) && seconds >= 30);
   const addressOk = check.state === "ok" && check.url === url && check.provider === form.provider;
-  const canAdd = addressOk && everyOk && form.folder.trim() && Number(form.maxNew) >= 0;
+  const youtube = form.provider === "youtube_video";
+  const needsTool = youtube && !toolReady;
+  const canAdd = addressOk && everyOk && form.folder.trim() && Number(form.maxNew) >= 0 && !needsTool;
 
   return (
     <form
       className="sheet wizard"
       onSubmit={(event) => {
         event.preventDefault();
-        if (step === 1) {
-          if (form.provider) setStep(2);
+        if (step === "kind") {
+          if (!form.provider) return;
+          setStep(needsTool ? "tool" : "details");
+          return;
+        }
+        if (step === "tool") {
+          if (!needsTool) setStep("details");
           return;
         }
         if (!canAdd) return;
@@ -231,39 +250,56 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
       <header className="sheet-head">
         <h2>New Source</h2>
         <div className="wizard-steps">
-          <button type="button" className={step === 1 ? "is-on" : ""} onClick={() => setStep(1)}>1 Kind</button>
-          <button type="button" className={step === 2 ? "is-on" : ""} disabled={!form.provider} onClick={() => form.provider && setStep(2)}>2 Details</button>
+          <button type="button" className={step === "kind" ? "is-on" : ""} onClick={() => setStep("kind")}>1 Kind</button>
+          {needsTool || step === "tool" ? (
+            <button type="button" className={step === "tool" ? "is-on" : ""} disabled={!form.provider} onClick={() => form.provider && setStep("tool")}>2 yt-dlp</button>
+          ) : null}
+          <button type="button" className={step === "details" ? "is-on" : ""} disabled={!form.provider || needsTool} onClick={() => form.provider && !needsTool && setStep("details")}>{needsTool || step === "tool" ? "3 Details" : "2 Details"}</button>
         </div>
       </header>
-      {step === 1 ? (
-        <div className="sheet-body">
+      {step === "tool" ? (
+        <YtDlpStep active={open && step === "tool"} onReady={markTool} />
+      ) : step === "kind" ? (
+        <div className="sheet-body kind-step">
           <label>Search
-            <input value={query} placeholder="Webpage, podcast, articles…" autoComplete="off" spellCheck="false" onChange={(event) => setQuery(event.target.value)} />
+            <input value={query} placeholder="Webpage, podcast, articles…" autoFocus autoComplete="off" spellCheck="false" onChange={(event) => setQuery(event.target.value)} />
           </label>
-          {kinds.length ? (
-            <div className="kind-grid" role="listbox" aria-label="Source kind">
-              {kinds.map((kind) => (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={form.provider === kind.id}
-                  key={kind.id}
-                  className={form.provider === kind.id ? "kind-card is-on" : "kind-card"}
-                  onClick={() => chooseKind(kind.id)}
-                  onDoubleClick={() => { chooseKind(kind.id); setStep(2); }}
-                >
-                  <Icon href={kind.icon} className={`kind-icon ${kind.tone}`} />
-                  <span className="kind-copy">
+          <div className="kind-pick">
+            {kinds.length ? (
+              <div className="kind-list" role="listbox" aria-label="Source kind">
+                {kinds.map((kind) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={form.provider === kind.id}
+                    key={kind.id}
+                    className={form.provider === kind.id ? "kind-row is-on" : "kind-row"}
+                    onClick={() => chooseKind(kind.id)}
+                    onDoubleClick={() => { chooseKind(kind.id); setStep(2); }}
+                  >
+                    <Icon href={kind.icon} className={`kind-icon ${kind.tone}`} />
                     <span className="kind-title">{kind.title}</span>
-                    <span className="kind-text">{kind.text}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : <p className="kind-empty">No kinds match.</p>}
+                  </button>
+                ))}
+              </div>
+            ) : <p className="kind-empty">No kinds match.</p>}
+            <aside className="kind-detail" aria-live="polite">
+              {chosen ? (
+                <>
+                  <Icon href={chosen.icon} className={`kind-detail-icon ${chosen.tone}`} />
+                  <h3>{chosen.title}</h3>
+                  <p>{chosen.text}</p>
+                </>
+              ) : (
+                <p className="kind-detail-empty">Choose a kind. What it saves is explained here, and the list can grow in this column.</p>
+              )}
+            </aside>
+          </div>
         </div>
       ) : (
         <div className="sheet-body">
+          <div className="detail-grid">
+          <div className="detail-main">
           {searching ? (
             <label>Search
               <input
@@ -274,7 +310,7 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
                 onChange={(event) => setSearch(event.target.value)}
                 onBlur={() => { flush.current = true; setTick((n) => n + 1); }}
               />
-              {check.message ? <span className={check.state === "bad" ? "hint is-bad" : "hint"}>{check.message}</span> : <span className="hint">Each check saves new results. A result keeps its title, address, snippet, details, and word index.</span>}
+              {check.message ? <span className={check.state === "bad" ? "hint is-bad" : "hint"}>{check.message}</span> : <span className="hint">Each check saves new results. A result keeps its title, address, snippet, details, and word index, plus a screenshot of the results page and of the linked page.</span>}
             </label>
           ) : null}
           {picks ? (
@@ -292,13 +328,13 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
           <label>URL
             <input
               required
-              placeholder="https://example.com"
+              placeholder={form.provider === "youtube_video" ? "https://www.youtube.com/watch?v=" : "https://example.com"}
               value={form.url}
               aria-invalid={check.state === "bad"}
               onChange={(event) => set("url", event.target.value)}
               onBlur={() => { flush.current = true; setTick((n) => n + 1); }}
             />
-            {check.message ? <span className={check.state === "bad" ? "hint is-bad" : "hint"}>{check.message}</span> : <span className="hint">Checked against the kind you chose.</span>}
+            {check.message ? <span className={check.state === "bad" ? "hint is-bad" : "hint"}>{check.message}</span> : <span className="hint">{form.provider === "youtube_video" ? "A watch, shorts, or youtu.be address. yt-dlp saves the files. Chrome saves the watch page and any cookies from the Marchive profile." : "Checked against the kind you chose."}</span>}
           </label>
           )}
           <label hidden={form.provider !== "article_index"}>Article link selector
@@ -306,32 +342,40 @@ export function AddSheet({ open, folder, onClose, onSubmit }) {
             <span className="hint">CSS selector for links on an index page. Leave empty to guess.</span>
           </label>
           <label>Name <input value={form.name} placeholder="Optional" onChange={(event) => set("name", event.target.value)} /></label>
-          <label>Check every
-            <span className={once ? "every-field is-once" : "every-field"}>
-              <input type="number" min="1" required={!once} disabled={once} aria-label="How many" value={form.every} onChange={(event) => set("every", event.target.value)} />
-              <select aria-label="Unit" value={form.unit} onChange={(event) => set("unit", event.target.value)}>
-                <option value="minutes">minutes</option>
-                <option value="hours">hours</option>
-                <option value="seconds">seconds</option>
-                <option value="once">Once</option>
-              </select>
-            </span>
-            <span className={everyOk ? "hint" : "hint is-bad"}>{once ? "Marchive checks once, then turns the schedule off." : everyOk ? "How often Marchive looks for something new." : "At least 30 seconds."}</span>
-          </label>
-          <label>New items each check
-            <input type="number" min="0" max="1000" required value={form.maxNew} onChange={(event) => set("maxNew", event.target.value)} />
-            <span className="hint">How many new pages or episodes to save each time. 0 saves every new one.</span>
-          </label>
-          <CaptureFields kind={form.provider} capture={form.capture} legend="Capture items" onChange={(capture) => set("capture", capture)} />
+          <div className="detail-pair">
+            <label>Check every
+              <span className={once ? "every-field is-once" : "every-field"}>
+                <input type="number" min="1" required={!once} disabled={once} aria-label="How many" value={form.every} onChange={(event) => set("every", event.target.value)} />
+                <select aria-label="Unit" value={form.unit} onChange={(event) => set("unit", event.target.value)}>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="seconds">seconds</option>
+                  <option value="once">Once</option>
+                </select>
+              </span>
+              <span className={everyOk ? "hint" : "hint is-bad"}>{once ? "Marchive checks once, then turns the schedule off." : everyOk ? "How often Marchive looks for something new." : "At least 30 seconds."}</span>
+            </label>
+            <label>New items each check
+              <input type="number" min="0" max="1000" required value={form.maxNew} onChange={(event) => set("maxNew", event.target.value)} />
+              <span className="hint">How many new pages or episodes to save each time. 0 saves every new one.</span>
+            </label>
+          </div>
           <label>Archive folder <input required value={form.folder} placeholder="'Marchive' in home directory" onChange={(event) => set("folder", event.target.value)} /></label>
           <label className="check"><input type="checkbox" checked={form.enabled} onChange={(event) => set("enabled", event.target.checked)} /> Schedule enabled</label>
+          </div>
+          <div className="detail-side">
+            <CaptureFields kind={form.provider} capture={form.capture} legend="Capture items" onChange={(capture) => set("capture", capture)} />
+          </div>
+          </div>
         </div>
       )}
       <footer className="sheet-foot">
-        {step === 2 ? <button type="button" onClick={() => setStep(1)}>Back</button> : null}
+        {step !== "kind" ? <button type="button" onClick={() => setStep(step === "details" && youtube && !ytDlpReady ? "tool" : "kind")}>Back</button> : null}
         <span className="sheet-spacer" />
         <button type="button" onClick={onClose}>Cancel</button>
-        {step === 1 ? <button type="submit" className="push" disabled={!form.provider}>Continue</button> : <button type="submit" className="push" disabled={!canAdd}>Add</button>}
+        {step === "details"
+          ? <button type="submit" className="push" disabled={!canAdd}>Add</button>
+          : <button type="submit" className="push" disabled={step === "kind" ? !form.provider : needsTool}>Continue</button>}
       </footer>
     </form>
   );

@@ -54,6 +54,16 @@ func TestPageAndCapture(t *testing.T) {
 	if page.StatusCode != 200 {
 		t.Fatalf("page %d", page.StatusCode)
 	}
+	for _, path := range []string{"/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png"} {
+		res, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %d", path, res.StatusCode)
+		}
+	}
 
 	body := `{"name":"Desk","url":"https://example.com","provider":"webpage","intervalSeconds":3600,"downloadLocation":"` + filepath.Join(dir, "out") + `","maxNew":5,"enabled":true}`
 	res, err := http.Post(ts.URL+"/api/sources", "application/json", strings.NewReader(body))

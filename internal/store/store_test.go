@@ -160,6 +160,56 @@ func TestFailInterruptedAndSettings(t *testing.T) {
 	if err != nil || n != 6 {
 		t.Fatalf("concurrency = %d %v", n, err)
 	}
+	itemLimit, err := st.ItemTimeoutSeconds()
+	if err != nil || itemLimit != 0 {
+		t.Fatalf("item time limit = %d %v", itemLimit, err)
+	}
+	captureLimit, err := st.CaptureTimeoutSeconds()
+	if err != nil || captureLimit != 0 {
+		t.Fatalf("capture time limit = %d %v", captureLimit, err)
+	}
+	itemTries, err := st.ItemTries()
+	if err != nil || itemTries != 1 {
+		t.Fatalf("item attempts = %d %v", itemTries, err)
+	}
+	captureTries, err := st.CaptureTries()
+	if err != nil || captureTries != 1 {
+		t.Fatalf("capture attempts = %d %v", captureTries, err)
+	}
+	if err := st.SetItemTimeoutSeconds(45); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCaptureTimeoutSeconds(1800); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetItemTries(3); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCaptureTries(2); err != nil {
+		t.Fatal(err)
+	}
+	itemLimit, err = st.ItemTimeoutSeconds()
+	if err != nil || itemLimit != 45 {
+		t.Fatalf("item time limit = %d %v", itemLimit, err)
+	}
+	captureLimit, err = st.CaptureTimeoutSeconds()
+	if err != nil || captureLimit != 1800 {
+		t.Fatalf("capture time limit = %d %v", captureLimit, err)
+	}
+	itemTries, err = st.ItemTries()
+	if err != nil || itemTries != 3 {
+		t.Fatalf("item attempts = %d %v", itemTries, err)
+	}
+	captureTries, err = st.CaptureTries()
+	if err != nil || captureTries != 2 {
+		t.Fatalf("capture attempts = %d %v", captureTries, err)
+	}
+	if err := st.SetItemTimeoutSeconds(-1); err == nil {
+		t.Fatal("expected an invalid item time limit")
+	}
+	if err := st.SetCaptureTries(0); err == nil {
+		t.Fatal("expected an invalid capture attempt count")
+	}
 }
 
 func TestOnceScheduleTurnsOff(t *testing.T) {

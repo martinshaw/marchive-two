@@ -161,7 +161,7 @@ func safeFileName(name string) (string, error) {
 
 func fileKind(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".txt":
+	case ".txt", ".vtt", ".srt":
 		return "text"
 	case ".html", ".htm":
 		return "html"
@@ -186,11 +186,13 @@ func fileRank(name string) int {
 		return 0
 	case "text.txt":
 		return 1
-	case "comments.txt":
+	case "comments.txt", "comments.json":
 		return 2
+	case "subtitles.vtt", "subtitles.srt":
+		return 3
 	case "site.txt":
 		return 3
-	case "page.html":
+	case "page.html", "results.jpg":
 		return 4
 	case "screenshot.jpg":
 		return 5

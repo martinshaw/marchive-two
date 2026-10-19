@@ -3,6 +3,7 @@ import { getState, send } from "./api.js";
 import { CapturePane } from "./CapturePane.jsx";
 import { CellTip } from "./CellTip.jsx";
 import { ChromeAlert } from "./ChromeAlert.jsx";
+import { YtDlpAlert } from "./YtDlpAlert.jsx";
 import { MenuBar, Sidebar, Toolbar } from "./chrome.jsx";
 import { bindCommands } from "./commands.js";
 import { buildMenu, ContextMenu, selectionLines, writeClipboard } from "./ContextMenu.jsx";
@@ -48,6 +49,8 @@ export function App() {
   const editRow = useRef(null);
   const [chromeOpen, setChromeOpen] = useState(false);
   const [chromeDetail, setChromeDetail] = useState("");
+  const [ytDlpOpen, setYtDlpOpen] = useState(false);
+  const [ytDlpDetail, setYtDlpDetail] = useState("");
   const [focus, setFocus] = useState("");
   const [hideCommon, setHideCommon] = useState(() => {
     try { return localStorage.getItem("marchive-hide-common") !== "0"; } catch { return true; }
@@ -261,7 +264,7 @@ export function App() {
 
   const { act, openEdit, removeSelection, doAction, saveSchedule, removeSchedule } = bindCommands({
     view, library, reload, showView,
-    setMenu, setContext, setSheet, setBanner, setChromeOpen, setEditVersion, setConfirm,
+    setMenu, setContext, setSheet, setBanner, setChromeOpen, setYtDlpOpen, setEditVersion, setConfirm,
     editRow, confirmAction, liveSchedules, liveRuns, liveItems,
   });
 
@@ -342,6 +345,11 @@ export function App() {
       const typing = event.target.closest("input, select, textarea");
       if (chromeOpen) {
         if (event.key === "Escape") setChromeOpen(false);
+        event.preventDefault();
+        return;
+      }
+      if (ytDlpOpen) {
+        if (event.key === "Escape") setYtDlpOpen(false);
         event.preventDefault();
         return;
       }
@@ -450,7 +458,8 @@ export function App() {
   const filesOn = inSources ? pickedSchedules.some((row) => row.schedule.downloadLocation) : pickedFileItems.length > 0;
   const signing = !!(library?.signingIn || library?.browserBusy);
   const sourceRows = sourceGridRows(schedules, view, filter, query, scheduleIds, sourceVisible);
-  const runRows = runGridRows(runs, view, filter, query, runIds, runVisible);
+  const folders = new Map(schedules.map((row) => [row.schedule.id, row.schedule.downloadLocation]));
+  const runRows = runGridRows(runs, view, filter, query, runIds, runVisible, folders);
   const itemRows = itemGridRows(oneRun, query, itemIds);
   const visibleSources = sourceRows.filter((row) => row.visible);
   const visibleRuns = runRows.filter((row) => row.visible);
@@ -506,7 +515,7 @@ export function App() {
             />
             <WordsPane view={view} timeline={timeline} query={query} focus={focus} setFocus={setFocus} hideCommon={hideCommon} hideURL={hideURL} toggleCommon={toggleCommon} toggleURL={toggleURL} />
             <section className={view === "settings" ? "pane is-on" : "pane"}>
-              {library ? <Settings library={library} onInstall={() => doAction("chrome-install")} onSave={(body) => act(() => send("POST", "/api/settings", body))} /> : null}
+              {library ? <Settings library={library} onInstall={() => doAction("chrome-install")} onYtDlp={() => doAction("ytdlp")} onSave={(body) => act(() => send("POST", "/api/settings", body))} /> : null}
             </section>
           </main>
         </div>
@@ -517,12 +526,12 @@ export function App() {
           </div>
         ) : null}
         <footer className="statusbar">
-          <span>{chromeDetail || (library?.chromePath ? "Chrome ready" : library?.chromeError || "")}</span>
+          <span>{ytDlpDetail || chromeDetail || (library?.chromePath ? "Chrome ready" : library?.chromeError || "")}</span>
           <span>{status}</span>
           <span>{runnerOn ? "Runner on" : "Runner off"}</span>
         </footer>
         <div className="sheet-layer" hidden={!sheet} onMouseDown={(event) => event.stopPropagation()}>
-          <AddSheet open={sheet === "add"} folder={library?.defaultFolder || ""} onClose={() => setSheet("")} onSubmit={(body) => act(() => send("POST", "/api/sources", body)).then(() => setSheet(""), () => {})} />
+          <AddSheet open={sheet === "add"} folder={library?.defaultFolder || ""} ytDlpReady={!!library?.ytDlpPath} onYtDlpInstalled={reload} onClose={() => setSheet("")} onSubmit={(body) => act(() => send("POST", "/api/sources", body)).then(() => setSheet(""), () => {})} />
           <EditSheet open={sheet === "edit"} row={editing} onClose={() => setSheet("")} onSave={saveSchedule} onRemove={() => removeSchedule(editing?.id)} />
           <AboutSheet open={sheet === "about"} version={library?.version || ""} onClose={() => setSheet("")} />
           <ConfirmSheet
@@ -545,6 +554,12 @@ export function App() {
           setChromeOpen(false);
         }}
         onStatus={setChromeDetail}
+      />
+      <YtDlpAlert
+        open={ytDlpOpen}
+        update={!!library?.ytDlpPath}
+        onClose={() => setYtDlpOpen(false)}
+        onStatus={setYtDlpDetail}
       />
       <CellTip />
       {context ? <ContextMenu menu={context} onClose={() => setContext(null)} /> : null}

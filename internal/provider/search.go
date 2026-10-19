@@ -52,27 +52,45 @@ func runSearch(ctx context.Context, req Request, kind string) (Summary, error) {
 		return Summary{}, errNotDDG
 	}
 	page := req.Source.URL
+	mode := Resolve(req.Source.Provider, req.Source.Capture).mode()
+	opt := browser.Options{Scroll: true, Screenshot: mode.Screenshot}
 	if kind == KindDDG {
 		page = ddgFetchURL(req.Source.URL)
 	}
+	if kind == KindGoogle {
+		// Google answers the headless window with a captcha, the same way X answers HTTP 403.
+		opt.Headed = true
+		opt.ReadyJS = googleReadyJS
+		opt.ResolveHrefs = true
+	}
 	var doc *browser.Document
-	_, err := withRetry(ctx, 2, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var fetchErr error
-		doc, fetchErr = req.Fetch.Fetch(ctx, page, browser.Options{Scroll: true})
+		doc, fetchErr = req.Fetch.Fetch(ctx, page, opt)
 		return fetchErr
 	})
 	if err != nil {
 		return Summary{}, err
 	}
-	hits := parseSearch(kind, doc.HTML, page)
+	base := page
+	if kind == KindGoogle && doc.URL != "" && !googleBlocked(doc) {
+		base = doc.URL
+	}
+	hits := parseSearch(kind, doc.HTML, base)
 	if len(hits) == 0 {
+		if kind == KindGoogle && googleBlocked(doc) {
+			return Summary{}, errors.New("Google asked to confirm this browser. Complete the check in the Chrome window, then run this source again.")
+		}
 		return Summary{}, errors.New("this search did not list any results")
 	}
 	query := searchQuery(req.Source.URL)
 	if query != "" {
 		maybeRenameSource(req, query)
 	}
-	mode := Resolve(req.Source.Provider, req.Source.Capture).mode()
+	var resultsShot []byte
+	if mode.Screenshot && doc != nil {
+		resultsShot = doc.Screenshot
+	}
 	engine := "Google"
 	if kind == KindDDG {
 		engine = "DuckDuckGo"
@@ -89,13 +107,18 @@ func runSearch(ctx context.Context, req Request, kind string) (Summary, error) {
 		}
 		if seen {
 			skipped++
+			if mode.Screenshot {
+				if err := fillSearchShots(ctx, req, hit.URL, resultsShot); err != nil {
+					return Summary{}, err
+				}
+			}
 			continue
 		}
 		if maxNew > 0 && attempted >= maxNew {
 			break
 		}
 		attempted++
-		if err := saveSearchHit(req, hit, query, mode, engine); err != nil {
+		if err := saveSearchHit(ctx, req, hit, query, mode, engine, resultsShot); err != nil {
 			if errors.Is(err, store.ErrExists) {
 				skipped++
 				continue
@@ -215,6 +238,26 @@ func parseSearch(kind, pageHTML, pageURL string) []searchHit {
 	return ddgHits(doc, pageURL)
 }
 
+const googleReadyJS = `(function () {
+  var path = location.pathname || "";
+  if (path.indexOf("/sorry") !== -1) return false;
+  var root = document.querySelector("#rso, #search, #center_col, #main");
+  if (!root) return false;
+  return root.querySelectorAll("h3, [role='heading']").length > 0;
+})()`
+
+func googleBlocked(doc *browser.Document) bool {
+	if doc == nil {
+		return false
+	}
+	page := strings.ToLower(doc.URL)
+	if strings.Contains(page, "/sorry") || strings.Contains(page, "consent.google.") {
+		return true
+	}
+	body := strings.ToLower(doc.HTML)
+	return strings.Contains(body, "unusual traffic") || strings.Contains(body, "our systems have detected")
+}
+
 func googleHits(doc *html.Node, pageURL string) []searchHit {
 	var hits []searchHit
 	seen := map[string]bool{}
@@ -223,12 +266,20 @@ func googleHits(doc *html.Node, pageURL string) []searchHit {
 		if len(hits) >= 50 {
 			return
 		}
-		if n.Type == html.ElementNode && n.Data == "h3" {
+		if n.Type == html.ElementNode && googleHeading(n) && !sponsoredResult(n) && !containsTag(n, "h3") {
 			title := strings.Join(strings.Fields(nodeText(n)), " ")
-			link := nearestLink(n)
+			link := headingLink(n)
 			raw := ""
 			if link != nil {
-				raw = unwrapSearchURL(attr(link, "href"), pageURL)
+				if saved := strings.TrimSpace(attr(link, "data-marchive-url")); saved != "" {
+					raw = cleanResultURL(saved)
+				}
+				if raw == "" {
+					raw = unwrapSearchURL(attr(link, "href"), pageURL)
+				}
+				if raw == "" {
+					raw = citeResultURL(link)
+				}
 			}
 			if title != "" && raw != "" && !seen[raw] {
 				seen[raw] = true
@@ -246,6 +297,40 @@ func googleHits(doc *html.Node, pageURL string) []searchHit {
 	}
 	walk(doc)
 	return hits
+}
+
+func containsTag(n *html.Node, tag string) bool {
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && (child.Data == tag || containsTag(child, tag)) {
+			return true
+		}
+	}
+	return false
+}
+
+func googleHeading(n *html.Node) bool {
+	if n.Data == "h3" {
+		return true
+	}
+	if attr(n, "role") != "heading" {
+		return false
+	}
+	level := strings.TrimSpace(attr(n, "aria-level"))
+	return level == "" || level == "3"
+}
+
+func sponsoredResult(n *html.Node) bool {
+	for n != nil {
+		switch strings.ToLower(attr(n, "id")) {
+		case "tads", "tadsb", "bottomads":
+			return true
+		}
+		if attr(n, "data-text-ad") != "" || attr(n, "data-ad-client") != "" {
+			return true
+		}
+		n = n.Parent
+	}
+	return false
 }
 
 func ddgHits(doc *html.Node, pageURL string) []searchHit {
@@ -287,9 +372,80 @@ func nearestLink(n *html.Node) *html.Node {
 	return nil
 }
 
+func citeResultURL(link *html.Node) string {
+	var cite string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if cite != "" || n == nil {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "cite" {
+			cite = strings.Join(strings.Fields(nodeText(n)), " ")
+			return
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(link)
+	return breadcrumbURL(cite)
+}
+
+func breadcrumbURL(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.Contains(text, "...") || strings.Contains(text, "…") {
+		return ""
+	}
+	parts := strings.Split(text, "›")
+	base := strings.TrimSpace(parts[0])
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	var segs []string
+	for _, part := range parts[1:] {
+		part = strings.Trim(strings.TrimSpace(part), "/")
+		if part == "" {
+			continue
+		}
+		segs = append(segs, part)
+	}
+	if len(segs) > 0 {
+		u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.Join(segs, "/")
+		u.RawQuery = ""
+		u.Fragment = ""
+	}
+	return cleanResultURL(u.String())
+}
+
+func headingLink(n *html.Node) *html.Node {
+	if link := nearestLink(n); link != nil {
+		return link
+	}
+	var found *html.Node
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if found != nil || node == nil {
+			return
+		}
+		if node.Type == html.ElementNode && node.Data == "a" && strings.TrimSpace(attr(node, "href")) != "" {
+			found = node
+			return
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(n)
+	return found
+}
+
 func resultBlock(n *html.Node) *html.Node {
 	block := n
-	for i := 0; n != nil && i < 8; i++ {
+	for i := 0; n != nil && i < 14; i++ {
 		if n.Type == html.ElementNode && classHas(n, "g", "MjjYud", "tF2Cxc", "result", "web-result") {
 			return n
 		}
@@ -413,7 +569,59 @@ func adHost(host string) bool {
 	}
 }
 
-func saveSearchHit(req Request, hit searchHit, query string, mode saveMode, engine string) error {
+func fillSearchShots(ctx context.Context, req Request, pageURL string, results []byte) error {
+	if req.Store == nil {
+		return nil
+	}
+	dir, ok, err := req.Store.ItemDir(req.Source.ID, pageURL)
+	if err != nil || !ok {
+		return err
+	}
+	return writeSearchShots(ctx, req, dir, pageURL, results)
+}
+
+func writeSearchShots(ctx context.Context, req Request, dir, pageURL string, results []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(results) > 0 {
+		path := filepath.Join(dir, "results.jpg")
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			if err := os.WriteFile(path, results, 0o644); err != nil {
+				return err
+			}
+		}
+	}
+	pageURL = strings.TrimSpace(pageURL)
+	if pageURL == "" || req.Fetch == nil {
+		return nil
+	}
+	path := filepath.Join(dir, "screenshot.jpg")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	var doc *browser.Document
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
+		var fetchErr error
+		doc, fetchErr = req.Fetch.Fetch(ctx, pageURL, browser.Options{Screenshot: true, Scroll: true})
+		if fetchErr != nil {
+			return fetchErr
+		}
+		if doc == nil || len(doc.Screenshot) == 0 {
+			return errors.New("linked page had no screenshot")
+		}
+		return nil
+	})
+	if err != nil || doc == nil || len(doc.Screenshot) == 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return nil
+	}
+	return os.WriteFile(path, doc.Screenshot, 0o644)
+}
+
+func saveSearchHit(ctx context.Context, req Request, hit searchHit, query string, mode saveMode, engine string, results []byte) error {
 	text := hit.Title
 	if hit.URL != "" {
 		if text != "" {
@@ -473,6 +681,11 @@ func saveSearchHit(req Request, hit searchHit, query string, mode saveMode, engi
 			return err
 		}
 		if err := os.WriteFile(filepath.Join(dir, "words.json"), append(raw, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	if mode.Screenshot {
+		if err := writeSearchShots(ctx, req, dir, hit.URL, results); err != nil {
 			return err
 		}
 	}

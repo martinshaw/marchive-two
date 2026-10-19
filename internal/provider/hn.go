@@ -227,7 +227,7 @@ type hnItem struct {
 
 func fetchHNList(ctx context.Context, api string) ([]int, error) {
 	var body []byte
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var getErr error
 		body, getErr = getBytes(ctx, mediaClient, api, 1<<20)
 		return getErr
@@ -244,7 +244,7 @@ func fetchHNList(ctx context.Context, api string) ([]int, error) {
 
 func fetchHNItem(ctx context.Context, id int) (hnItem, error) {
 	var body []byte
-	_, err := withRetry(ctx, 3, func() error {
+	_, err := withRetry(ctx, 1, func(ctx context.Context) error {
 		var getErr error
 		body, getErr = getBytes(ctx, mediaClient, fmt.Sprintf("%s/item/%d.json", hnAPI, id), 1<<20)
 		return getErr
@@ -420,7 +420,7 @@ func saveHN(ctx context.Context, req Request, item hnItem, capture Capture) erro
 	var shotErr error
 	if capture.Screenshot && link != "" {
 		var doc *browser.Document
-		_, shotErr = withRetry(ctx, 2, func() error {
+		_, shotErr = withRetry(ctx, 1, func(ctx context.Context) error {
 			var ferr error
 			doc, ferr = req.Fetch.Fetch(ctx, link, browser.Options{Screenshot: true, Scroll: true})
 			return ferr

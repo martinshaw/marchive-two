@@ -19,6 +19,8 @@ type Runner struct {
 	store *store.Store
 	reg   *provider.Registry
 	fetch browser.Fetcher
+	// dataDir is the app data directory. YouTube captures find yt-dlp there.
+	dataDir string
 
 	jobs chan job
 	kick chan struct{}
@@ -54,6 +56,14 @@ func (r *Runner) Start(ctx context.Context) {
 // Shutdown waits for the scheduler and worker to leave.
 func (r *Runner) Shutdown() {
 	r.wg.Wait()
+}
+
+// SetDataDir tells captures where the managed yt-dlp binary lives.
+func (r *Runner) SetDataDir(dir string) {
+	if r == nil {
+		return
+	}
+	r.dataDir = dir
 }
 
 // Kick asks the scheduler to look for due work.
@@ -237,8 +247,6 @@ func (r *Runner) execute(processCtx context.Context, job job) {
 	}
 
 	runCtx, userCancel := context.WithCancel(processCtx)
-	runCtx, timeoutCancel := context.WithTimeout(runCtx, 30*time.Minute)
-	defer timeoutCancel()
 	defer userCancel()
 	r.track(job.RunID, userCancel)
 	defer r.untrack(job.RunID)
@@ -256,15 +264,32 @@ func (r *Runner) execute(processCtx context.Context, job job) {
 		return
 	}
 	slots, _ := r.store.PodcastConcurrency()
+	itemTimeout, captureTimeout, itemTries, captureTries := r.limits()
 	slog.Info("capture started", "run", job.RunID, "source", detail.Source.Name, "provider", detail.Source.Provider)
-	summary, err := impl.Run(runCtx, provider.Request{
-		Source:             detail.Source,
-		Schedule:           detail.Schedule,
-		RunID:              job.RunID,
-		Store:              r.store,
-		Fetch:              r.fetch,
-		PodcastConcurrency: slots,
-	})
+	var summary provider.Summary
+	for attempt := 1; attempt <= captureTries; attempt++ {
+		if err = runCtx.Err(); err != nil {
+			break
+		}
+		if attempt > 1 {
+			slog.Info("capture attempt", "run", job.RunID, "attempt", attempt, "of", captureTries)
+		}
+		attemptCtx, stopTimeout := attemptContext(runCtx, captureTimeout)
+		attemptCtx = provider.WithItemLimits(attemptCtx, itemTimeout, itemTries)
+		summary, err = impl.Run(attemptCtx, provider.Request{
+			Source:             detail.Source,
+			Schedule:           detail.Schedule,
+			RunID:              job.RunID,
+			Store:              r.store,
+			Fetch:              r.fetch,
+			PodcastConcurrency: slots,
+			DataDir:            r.dataDir,
+		})
+		stopTimeout()
+		if err == nil || runCtx.Err() != nil {
+			break
+		}
+	}
 	finished = true
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -303,6 +328,38 @@ func (r *Runner) untrack(id int64) {
 	r.mu.Lock()
 	delete(r.active, id)
 	r.mu.Unlock()
+}
+
+func (r *Runner) limits() (itemTimeout, captureTimeout time.Duration, itemTries, captureTries int) {
+	itemTries, captureTries = 1, 1
+	itemSeconds, err := r.store.ItemTimeoutSeconds()
+	if err != nil {
+		slog.Error("read item time limit", "err", err)
+		itemSeconds = 0
+	}
+	captureSeconds, err := r.store.CaptureTimeoutSeconds()
+	if err != nil {
+		slog.Error("read capture time limit", "err", err)
+		captureSeconds = 0
+	}
+	itemTries, err = r.store.ItemTries()
+	if err != nil || itemTries < 1 {
+		slog.Error("read item attempts", "err", err)
+		itemTries = 1
+	}
+	captureTries, err = r.store.CaptureTries()
+	if err != nil || captureTries < 1 {
+		slog.Error("read capture attempts", "err", err)
+		captureTries = 1
+	}
+	return time.Duration(itemSeconds) * time.Second, time.Duration(captureSeconds) * time.Second, itemTries, captureTries
+}
+
+func attemptContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, timeout)
 }
 
 func noteOr(note, fallback string) string {

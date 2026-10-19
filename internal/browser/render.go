@@ -64,6 +64,32 @@ func skipResource(kind network.ResourceType) bool {
 	}
 }
 
+// waitReady polls script until it returns true, clicking through a consent
+// dialog between checks. A page that stays blocked is returned as it is.
+func waitReady(ctx context.Context, script string) error {
+	deadline := time.Now().Add(45 * time.Second)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var ready bool
+		if err := chromedp.Evaluate(script, &ready).Do(ctx); err != nil {
+			return err
+		}
+		if ready || !time.Now().Before(deadline) {
+			return nil
+		}
+		_ = chromedp.Evaluate(dismissCookieJS, nil).Do(ctx)
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 // wait until the loaded page has stopped changing, so markup built by the
 // page's own scripts is present before the snapshot.
 func (p *pageLoad) wait(ctx context.Context) error {

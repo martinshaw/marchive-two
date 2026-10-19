@@ -58,6 +58,9 @@ func TestCreateSourceValidates(t *testing.T) {
 	if state.ListenPort != 8080 {
 		t.Fatalf("listen port %d", state.ListenPort)
 	}
+	if state.ItemTimeoutSeconds != 0 || state.CaptureTimeoutSeconds != 0 || state.ItemTries != 1 || state.CaptureTries != 1 {
+		t.Fatalf("default limits %+v", state)
+	}
 	bad := 70000
 	if err := svc.UpdateSettings(SettingsInput{ListenPort: &bad}); err == nil {
 		t.Fatal("expected an invalid port error")
@@ -92,6 +95,30 @@ func TestCreateSourceValidates(t *testing.T) {
 	badSelector := "div[a"
 	if err := svc.UpdateSchedule(articleSchedule, ScheduleInput{LinkSelector: &badSelector}); err == nil {
 		t.Fatal("expected an invalid selector error")
+	}
+	itemTimeout, captureTimeout, itemTries, captureTries := 30, 600, 4, 2
+	if err := svc.UpdateSettings(SettingsInput{
+		ItemTimeoutSeconds:    &itemTimeout,
+		CaptureTimeoutSeconds: &captureTimeout,
+		ItemTries:             &itemTries,
+		CaptureTries:          &captureTries,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state, err = svc.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ItemTimeoutSeconds != 30 || state.CaptureTimeoutSeconds != 600 || state.ItemTries != 4 || state.CaptureTries != 2 {
+		t.Fatalf("limits %+v", state)
+	}
+	tooMany := 11
+	if err := svc.UpdateSettings(SettingsInput{CaptureTries: &tooMany}); err == nil {
+		t.Fatal("expected an invalid capture attempt count")
+	}
+	negative := -1
+	if err := svc.UpdateSettings(SettingsInput{ItemTimeoutSeconds: &negative}); err == nil {
+		t.Fatal("expected an invalid item time limit")
 	}
 	_, err = svc.RunNow(scheduleID)
 	var se *Error

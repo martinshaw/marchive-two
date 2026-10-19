@@ -18,10 +18,12 @@ export function sourceGridRows(schedules, view, filter, query, scheduleIds, sour
       visible,
       selected: visible && scheduleIds.includes(row.schedule.id),
       row,
+      dragPath: row.schedule.downloadLocation || "",
+      dragName: row.name,
       cells: [
         { className: "name", sortText: row.name, node: <><span className="primary">{row.name}</span>{row.source.linkSelector ? <span className="sub">{row.source.linkSelector}</span> : null}</> },
         { sortText: providerLabel(row.kind), node: providerLabel(row.kind) },
-        { className: "clip", sortText: row.source.url, node: <a href={row.source.url}>{row.source.url}</a> },
+        { className: "clip", sortText: row.source.url, node: <a href={row.source.url} draggable={false}>{row.source.url}</a> },
         { sort: String(row.schedule.intervalSeconds), sortText: everyLabel(row.schedule.intervalSeconds), node: everyLabel(row.schedule.intervalSeconds) },
         { sort: unix(row.schedule.nextRunAt), sortText: stamp(row.schedule.nextRunAt), node: stamp(row.schedule.nextRunAt) },
         { className: "num", sort: String(row.schedule.maxNew), sortText: String(row.schedule.maxNew), node: row.schedule.maxNew },
@@ -32,7 +34,7 @@ export function sourceGridRows(schedules, view, filter, query, scheduleIds, sour
   });
 }
 
-export function runGridRows(runs, view, filter, query, runIds, runVisible) {
+export function runGridRows(runs, view, filter, query, runIds, runVisible, folders) {
   return runs.map((run) => {
     const visible = runVisible(run, view, filter, query);
     return {
@@ -40,6 +42,8 @@ export function runGridRows(runs, view, filter, query, runIds, runVisible) {
       visible,
       selected: visible && runIds.includes(run.id),
       run,
+      dragPath: folders?.get(run.scheduleId) || "",
+      dragName: run.name,
       cells: [
         { sortText: run.status, node: <Pill meter={runMeter(run.status, run.items)} /> },
         { className: "name", sortText: run.name, node: <span className="primary">{run.name}</span> },
@@ -62,11 +66,13 @@ export function itemGridRows(oneRun, query, itemIds) {
       visible,
       selected: visible && itemIds.includes(item.id),
       item,
+      dragPath: item.downloadLocation || "",
+      dragName: title,
       cells: [
         { sortText: item.status, node: <Pill meter={itemMeter(item.status)} /> },
         { className: "name", sortText: title, node: <span className="primary">{title}</span> },
         { sortText: item.kind, node: item.kind },
-        { className: "clip", sortText: item.url, node: item.url ? <a href={item.url}>{item.url}</a> : null },
+        { className: "clip", sortText: item.url, node: item.url ? <a href={item.url} draggable={false}>{item.url}</a> : null },
         { className: "clip", sortText: item.error, node: item.error ? <span className="fault">{item.error}</span> : null },
       ],
     };
