@@ -73,6 +73,10 @@ func (c *Client) SignIn() error {
 	return c.post("/api/browser/signin", map[string]any{}, nil)
 }
 
+func (c *Client) OpenChrome() error {
+	return c.post("/api/browser/open", map[string]any{}, nil)
+}
+
 func (c *Client) get(path string, dest any) error {
 	return c.send(http.MethodGet, path, nil, dest)
 }

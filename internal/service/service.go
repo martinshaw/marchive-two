@@ -491,10 +491,18 @@ func (s *Service) applyLoginService(in SettingsInput) error {
 }
 
 func (s *Service) BeginSignIn() error {
+	return s.openChromeWindow(func(br *browser.Client) error { return br.BeginSignIn() })
+}
+
+func (s *Service) OpenChrome() error {
+	return s.openChromeWindow(func(br *browser.Client) error { return br.OpenChrome() })
+}
+
+func (s *Service) openChromeWindow(open func(*browser.Client) error) error {
 	if s.Browser == nil {
 		return &Error{Status: 409, Msg: "Marchive is not running."}
 	}
-	if err := s.Browser.BeginSignIn(); err != nil {
+	if err := open(s.Browser); err != nil {
 		return &Error{Status: 409, Msg: err.Error()}
 	}
 	return nil

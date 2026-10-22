@@ -84,6 +84,21 @@ func browserCmd() *cobra.Command {
 			return nil
 		},
 	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "open",
+		Short: "Open Chrome so you can change the Marchive profile",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			base, err := ensureServer()
+			if err != nil {
+				return err
+			}
+			if err := client.New(base).OpenChrome(); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Chrome is opening. Add an extension or change settings, then quit Chrome.")
+			return nil
+		},
+	})
 	return cmd
 }
 

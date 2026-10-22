@@ -68,6 +68,31 @@ func (c *Client) Status() (busy, signingIn bool) {
 // BeginSignIn opens a visible Chrome window on Marchive's profile and returns
 // without waiting. The window stays until the user quits Chrome.
 func (c *Client) BeginSignIn() error {
+	return c.openWindow("about:blank")
+}
+
+// OpenChrome opens the same profile on the extensions page so the user can
+// install an ad blocker or change other Chrome settings. Captures load the
+// extensions saved in that profile.
+func (c *Client) OpenChrome() error {
+	return c.openWindow("chrome://extensions")
+}
+
+// CloseProfile quits Chrome windows that are using Marchive's profile so the
+// profile directory can be removed.
+func (c *Client) CloseProfile() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	profile := c.profile
+	c.busy = false
+	c.signingIn = false
+	c.mu.Unlock()
+	releaseProfile(profile)
+}
+
+func (c *Client) openWindow(page string) error {
 	c.mu.Lock()
 	if c.busy || c.signingIn {
 		c.mu.Unlock()
@@ -97,7 +122,7 @@ func (c *Client) BeginSignIn() error {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		cmd := startVisibleChrome(ctx, bin, c.profile)
+		cmd := startVisibleChrome(ctx, bin, c.profile, page)
 		_ = cmd.Run()
 	}()
 	return nil

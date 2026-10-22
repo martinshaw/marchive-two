@@ -21,17 +21,21 @@ func (c *Client) allocator(ctx context.Context, bin string, headed bool) (contex
 	} else {
 		opts = append(opts, chromedp.Flag("headless", "new"))
 	}
+	// Keep extensions installed in the Marchive profile, such as an ad blocker.
+	opts = append(opts, chromedp.Flag("disable-extensions", false))
 	ctx, cancel := chromedp.NewExecAllocator(ctx, opts...)
 	return ctx, cancel, nil
 }
 
-func startVisibleChrome(ctx context.Context, bin, profile string) *exec.Cmd {
+func releaseProfile(string) {}
+
+func startVisibleChrome(ctx context.Context, bin, profile, page string) *exec.Cmd {
 	return exec.CommandContext(ctx, bin,
 		"--user-data-dir="+profile,
 		"--profile-directory=Default",
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--new-window",
-		"about:blank",
+		page,
 	)
 }

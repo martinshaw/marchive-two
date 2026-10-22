@@ -31,6 +31,9 @@ func TestChromeArgsUsesAVisibleWindowWhenHeaded(t *testing.T) {
 	if !strings.Contains(hidden, "--headless=new") || strings.Contains(hidden, "--profile-directory=Default") {
 		t.Fatalf("hidden args:\n%s", hidden)
 	}
+	if strings.Contains(visible, "--disable-extensions") || strings.Contains(hidden, "--disable-extensions") {
+		t.Fatal("captures should load extensions installed in the Marchive profile")
+	}
 }
 
 func TestSingletonPID(t *testing.T) {

@@ -113,7 +113,7 @@ function Tool({ icon, label, disabled, danger, onClick }) {
   );
 }
 
-export function MenuBar({ menu, setMenu, doAction, showView, library, runnerOn, editOn, filesOn, removeOn, sourcesOn, activeRun, signing }) {
+export function MenuBar({ menu, setMenu, doAction, showView, library, runnerOn, editOn, filesOn, removeOn, sourcesOn, activeRun }) {
   return (
     <header className="menubar">
       <nav className="menus" aria-label="Application">
@@ -136,7 +136,8 @@ export function MenuBar({ menu, setMenu, doAction, showView, library, runnerOn, 
           <button type="button" role="menuitem" onClick={() => doAction("runner")}>{runnerOn ? "Stop Runner" : "Start Runner"}</button>
           <button type="button" role="menuitem" disabled={!activeRun} onClick={() => doAction("cancel")}>Cancel Capture</button>
           <div className="menu-sep" />
-          <button type="button" role="menuitem" disabled={signing} onClick={() => doAction("signin")}>Sign In with Chrome</button>
+          <button type="button" role="menuitem" onClick={() => doAction("signin")}>Sign In with Chrome</button>
+          <button type="button" role="menuitem" onClick={() => doAction("chrome")}>Open Chrome</button>
         </Menu>
         <Menu name="View" open={menu === "view"} onOpen={() => setMenu(menu === "view" ? "" : "view")} onHover={() => menu && setMenu("view")}>
           <button type="button" role="menuitem" onClick={() => showView("sources", "all")}>All Sources<span className="key">⌃1</span></button>
@@ -160,7 +161,7 @@ export function MenuBar({ menu, setMenu, doAction, showView, library, runnerOn, 
   );
 }
 
-export function Toolbar({ query, setQuery, doAction, runnerOn, sourcesOn, activeRun, editOn, filesOn, removeOn, signing }) {
+export function Toolbar({ query, setQuery, doAction, runnerOn, sourcesOn, activeRun, editOn, filesOn, removeOn }) {
   return (
     <div className="toolbar">
       <div className="tools" role="toolbar" aria-label="Actions">
@@ -177,11 +178,33 @@ export function Toolbar({ query, setQuery, doAction, runnerOn, sourcesOn, active
         <Tool icon="#i-folder" label="Files" disabled={!filesOn} onClick={() => doAction("files")} />
         <Tool icon="#i-trash" label="Remove" danger disabled={!removeOn} onClick={() => doAction("remove")} />
         <span className="tool-sep" />
-        <Tool icon="#i-person" label="Sign In" disabled={signing} onClick={() => doAction("signin")} />
+        <Tool icon="#i-person" label="Sign In" onClick={() => doAction("signin")} />
+        <Tool icon="#i-globe" label="Chrome" onClick={() => doAction("chrome")} />
       </div>
       <label className="filter-field">
         <input id="table-filter" type="search" placeholder="Filter" autoComplete="off" spellCheck="false" aria-label="Filter" value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
+    </div>
+  );
+}
+
+export function ChromeBusyDialog({ open, capturing, onClose }) {
+  if (!open) return null;
+  const title = capturing ? "Chrome is capturing a page" : "Chrome is already open";
+  const body = capturing
+    ? "A capture is using Marchive's Chrome profile. Only one window can use that profile at a time, so Sign In and Chrome cannot open another one until the capture finishes. Stop the runner if you want to open Chrome before then."
+    : "Chrome is already open on the Marchive profile. Quit that window when you are finished. Only one window can use the profile at a time.";
+  return (
+    <div className="alert-layer">
+      <div className="alert" role="dialog" aria-modal="true" aria-labelledby="chrome-busy-title">
+        <div className="alert-main">
+          <h2 id="chrome-busy-title">{title}</h2>
+          <p>{body}</p>
+          <div className="alert-actions">
+            <button type="button" className="push" onClick={onClose}>OK</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

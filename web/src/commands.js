@@ -3,7 +3,7 @@ import { everyParts, intervalSeconds } from "./format.js";
 
 export function bindCommands({
   view, library, reload, showView,
-  setMenu, setContext, setSheet, setBanner, setChromeOpen, setYtDlpOpen, setEditVersion, setConfirm,
+    setMenu, setContext, setSheet, setBanner, setChromeOpen, setChromeHold, setYtDlpOpen, setEditVersion, setConfirm,
   editRow, confirmAction,
   liveSchedules, liveRuns, liveItems,
 }) {
@@ -89,17 +89,23 @@ export function bindCommands({
       return;
     }
     if (action === "settings") { showView("settings", ""); return; }
+    if (action === "reset") { setSheet("reset"); return; }
     if (action === "runner") {
       act(() => send("POST", "/api/runner", { enabled: !library?.runnerEnabled }));
       return;
     }
-    if (action === "signin") {
+    if (action === "signin" || action === "chrome") {
       if (!library?.chromePath) {
         sessionStorage.removeItem("marchive-chrome-later");
         setChromeOpen(true);
         return;
       }
-      act(() => send("POST", "/api/browser/signin", {}));
+      if (library?.browserBusy || library?.signingIn) {
+        setChromeHold(true);
+        return;
+      }
+      const path = action === "chrome" ? "/api/browser/open" : "/api/browser/signin";
+      act(() => send("POST", path, {}));
       return;
     }
     if (action === "run" && view === "sources") {

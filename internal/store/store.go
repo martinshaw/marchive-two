@@ -471,6 +471,27 @@ func (s *Store) ItemDirs(clause string, args ...any) ([]string, error) {
 	return dirs, rows.Err()
 }
 
+// Reset removes every source, capture, item, and setting.
+func (s *Store) Reset() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, query := range []string{
+		`DELETE FROM items`,
+		`DELETE FROM runs`,
+		`DELETE FROM schedules`,
+		`DELETE FROM sources`,
+		`DELETE FROM settings`,
+	} {
+		if _, err := tx.Exec(query); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) DeleteItem(id int64) error {
 	res, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
 	if err != nil {
