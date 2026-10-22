@@ -1,0 +1,34 @@
+# Out of the semantic index. General queries should not spend tokens on these.
+# The agent can still open a file here when a task names it, unless .cursorignore also lists it.
+
+# Dependencies
+vendor/
+web/node_modules/
+**/node_modules/
+
+# Generated assets
+internal/httpapi/ui/dist/
+dist/
+build/
+coverage/
+web/.vite/
+marchive
+marchive.exe
+
+# Databases and migration dumps
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.dump
+*.sql.gz
+dumps/
+**/dumps/
+
+# Lockfiles are dependency metadata, not project source
+go.sum
+web/package-lock.json
+
+# Local noise
+*.log
+.DS_Store

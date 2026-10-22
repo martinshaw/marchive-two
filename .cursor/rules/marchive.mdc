@@ -1,48 +1,36 @@
 ---
-description: Where Marchive code lives and how to rebuild it without searching
+description: Where to edit Marchive, and what not to open
 alwaysApply: true
 ---
 
 # Marchive
 
-cgo-free Go app. Module `github.com/martinshaw/marchive-two`. Use `CGO_ENABLED=0` and `GOTOOLCHAIN=local`.
+cgo-free Go. Module `github.com/martinshaw/marchive-two`. Use `CGO_ENABLED=0` and `GOTOOLCHAIN=local`.
 
-## Where to edit
+Read only the file for the task. Do not list the repo or open a neighbor to get oriented. In a file over 400 lines, read the one function you are changing.
 
-- `web/src/App.jsx` — state, polling, and how the screens fit together
-- `web/src/chrome.jsx` — menubar, toolbar, sidebar
-- `web/src/SourcesPane.jsx`, `CapturePane.jsx`, `ReaderPane.jsx`, `WordsPane.jsx` — one screen each
-- `web/src/rows.jsx` — table row data
-- `web/src/selection.js` — click, shift, and command selection
-- `web/src/commands.js` — toolbar and menu actions
-- `web/src/library.js` — which rows are visible, and the sidebar counts
-- `web/src/Sheets.jsx`, `web/src/AddSheet.jsx` — sheets, and the new-source wizard
-- `web/src/Grid.jsx` — tables
-- `web/src/Split.jsx` — draggable split between panes
-- `web/src/ContextMenu.jsx` — menus and clipboard
-- `web/src/Message.jsx`, `web/src/Words.jsx` — item details and word clouds
-- `internal/httpapi/static/app.css` — all UI styles, served as `/static/app.css` (Vite does not bundle it)
-- `internal/httpapi/server.go` — HTTP routes
-- `internal/service` — request behavior
-- `internal/store` — SQLite
+## One file
 
-Do not read or edit `internal/httpapi/ui/dist`. Vite overwrites it.
+- Screen layout and polling: `web/src/App.jsx`
+- Menubar, toolbar, sidebar: `web/src/chrome.jsx`
+- One screen: `SourcesPane.jsx`, `CapturePane.jsx`, `ReaderPane.jsx`, `WordsPane.jsx`
+- Rows, selection, commands, counts: `rows.jsx`, `selection.js`, `commands.js`, `library.js`
+- Sheets and the new-source wizard: `Sheets.jsx`, `AddSheet.jsx`
+- Tables, splits, menus, details: `Grid.jsx`, `Split.jsx`, `ContextMenu.jsx`, `Message.jsx`, `Words.jsx`
+- Styles: `internal/httpapi/static/app.css`. Search for the selector. Do not read the file.
+- One HTTP route: `internal/httpapi/server.go`. The route list is the top. Then read that handler.
+- Request behavior: `internal/service/service.go`. Removing files: `remove.go`. Item files: `files.go`
+- Record types: `internal/store/store.go`. Schema: `schema.go`. Sources: `sources.go`. Schedules and deletes: `schedules.go`. Runs: `runs.go`. Items: `items.go`. Settings: `settings.go`
+- One capture kind: `internal/provider/page.go`, `article.go`, `podcast.go`, `x.go`, `hn.go`, `youtube.go`, or `search.go`
+- Chrome launch: `internal/browser/browser.go` and `launch_darwin.go`. Page bytes: `archive.go`
+- Commands: `internal/cli/cli.go`. Scheduler: `internal/runner/runner.go`. yt-dlp: `internal/ytdlp/ytdlp.go`
+
+Do not read `internal/httpapi/ui/dist` or `web/node_modules`.
 
 ## Rebuild
 
-Run commands from the repo root. `make` from `web/` has no `build` target.
+From the repo root. CSS only: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o marchive ./cmd/marchive`. JavaScript: `make build`. Then `pkill -x marchive` and `./marchive serve`. The port is random. Read the log URL. Do not use `go run`.
 
-- CSS only: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o marchive ./cmd/marchive`
-- JavaScript, or both: `make build`
-- The binary embeds the page, so restart after either: `pkill -x marchive`, then `./marchive serve`
-- The listen port is random. Read the log URL and tell the user. Do not use `go run`.
+Tests: `CGO_ENABLED=0 GOTOOLCHAIN=local go test ./internal/service/ ./internal/store/ -count=1`. Skip `./internal/browser/` unless that package changed.
 
-## Checks
-
-`CGO_ENABLED=0 GOTOOLCHAIN=local go test ./internal/service/ ./internal/store/ -count=1`
-
-Skip `go test ./internal/browser/` unless the change is in that package. It launches Chrome.
-
-## Live data
-
-The app uses `~/Library/Application Support/Marchive`. Do not save Settings, add a source, or confirm Remove unless asked. Cancel those sheets.
+Live data is `~/Library/Application Support/Marchive`. Do not save Settings, add a source, or confirm Remove unless asked.
