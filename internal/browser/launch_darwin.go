@@ -97,7 +97,6 @@ func chromeArgs(bin, profile string, port int, headed bool) []string {
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-sync",
-		"--disable-extensions",
 		"--disable-breakpad",
 		"--disable-crash-reporter",
 		"--use-mock-keychain",
@@ -106,7 +105,7 @@ func chromeArgs(bin, profile string, port int, headed bool) []string {
 	return args
 }
 
-func startVisibleChrome(ctx context.Context, bin, profile string) *exec.Cmd {
+func startVisibleChrome(ctx context.Context, bin, profile, page string) *exec.Cmd {
 	return exec.CommandContext(ctx, "open",
 		"-W", "-n", "-a", chromeApp(bin), "--args",
 		"--user-data-dir="+profile,
@@ -114,7 +113,7 @@ func startVisibleChrome(ctx context.Context, bin, profile string) *exec.Cmd {
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--new-window",
-		"about:blank",
+		page,
 	)
 }
 

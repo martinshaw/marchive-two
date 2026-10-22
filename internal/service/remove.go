@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/martinshaw/marchive-two/internal/paths"
+	"github.com/martinshaw/marchive-two/internal/store"
+	"github.com/martinshaw/marchive-two/internal/supervise"
 )
 
 // DeleteSource removes a source. When files is set, each captured item folder
@@ -107,6 +111,102 @@ func (s *Service) stopActive(kind string, id int64) {
 	for _, runID := range ids {
 		_ = s.Runner.Cancel(runID)
 	}
+}
+
+// Reset stops the runner, deletes captured files, and erases app data so the
+// library is empty. The database file, lock, and current port stay so this
+// process can keep serving.
+func (s *Service) Reset() error {
+	if s.Runner != nil {
+		if err := s.Runner.SetEnabled(false); err != nil {
+			return err
+		}
+		running, err := s.Store.ListRunIDsByStatus(store.StatusRunning)
+		if err != nil {
+			return err
+		}
+		for _, id := range running {
+			_ = s.Runner.Cancel(id)
+		}
+	}
+	if s.Browser != nil {
+		s.Browser.CloseProfile()
+	}
+	dirs, err := s.Store.ItemDirs("1 = 1")
+	if err != nil {
+		return err
+	}
+	roots, err := s.Store.DownloadRoots()
+	if err != nil {
+		return err
+	}
+	if err := removeItemDirs(dirs, roots); err != nil {
+		return err
+	}
+	for _, dir := range dirs {
+		removeEmptyParents(dir, roots)
+	}
+	if err := s.Store.Reset(); err != nil {
+		return err
+	}
+	if err := removeAppData(s.DataDir); err != nil {
+		return err
+	}
+	return s.clearLoginService()
+}
+
+func removeAppData(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil
+	}
+	var first error
+	for _, path := range []string{paths.Profile(dir), filepath.Join(dir, "bin"), paths.Log(dir)} {
+		err := os.RemoveAll(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func (s *Service) clearLoginService() error {
+	if strings.TrimSpace(s.DataDir) == "" {
+		return nil
+	}
+	home, err := paths.Resolve("")
+	if err != nil || filepath.Clean(s.DataDir) != filepath.Clean(home) {
+		return nil
+	}
+	return supervise.Apply(supervise.Spec{DataDir: s.DataDir})
+}
+
+func removeEmptyParents(dir string, roots []string) {
+	parent := filepath.Dir(filepath.Clean(dir))
+	for parent != "" && parent != "." && nestedInRoot(parent, roots) {
+		entries, err := os.ReadDir(parent)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(parent); err != nil {
+			return
+		}
+		parent = filepath.Dir(parent)
+	}
+}
+
+func nestedInRoot(dir string, roots []string) bool {
+	dir = filepath.Clean(dir)
+	for _, root := range roots {
+		root = filepath.Clean(strings.TrimSpace(root))
+		if root == "" || dir == root {
+			continue
+		}
+		if isPathPrefix(root, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 // removeItemDirs deletes captured item folders. A path is skipped when it is

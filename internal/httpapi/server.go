@@ -69,8 +69,11 @@ func New(svc *service.Service) http.Handler {
 	mux.HandleFunc("POST /runs/{id}/cancel", h.cancelRun)
 	mux.HandleFunc("POST /api/settings", h.settings)
 	mux.HandleFunc("POST /settings", h.settings)
+	mux.HandleFunc("POST /api/reset", h.reset)
 	mux.HandleFunc("POST /api/browser/signin", h.signIn)
 	mux.HandleFunc("POST /browser/signin", h.signIn)
+	mux.HandleFunc("POST /api/browser/open", h.openChrome)
+	mux.HandleFunc("POST /browser/open", h.openChrome)
 	mux.HandleFunc("GET /api/chrome", h.chromeStatus)
 	mux.HandleFunc("POST /api/chrome/install", h.chromeInstall)
 	mux.HandleFunc("POST /api/chrome/install/cancel", h.chromeCancel)
@@ -428,13 +431,29 @@ func (h *handler) settings(w http.ResponseWriter, r *http.Request) {
 	h.done(w, r, map[string]bool{"ok": true})
 }
 
+func (h *handler) reset(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.Reset(); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.done(w, r, map[string]bool{"ok": true})
+}
+
 func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.BeginSignIn(); err != nil {
+	h.openBrowser(w, r, h.svc.BeginSignIn, "opening Chrome")
+}
+
+func (h *handler) openChrome(w http.ResponseWriter, r *http.Request) {
+	h.openBrowser(w, r, h.svc.OpenChrome, "opening Chrome")
+}
+
+func (h *handler) openBrowser(w http.ResponseWriter, r *http.Request, open func() error, status string) {
+	if err := open(); err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	if answersJSON(r) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "opening Chrome"})
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": status})
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)

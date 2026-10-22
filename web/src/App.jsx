@@ -4,7 +4,7 @@ import { CapturePane } from "./CapturePane.jsx";
 import { CellTip } from "./CellTip.jsx";
 import { ChromeAlert } from "./ChromeAlert.jsx";
 import { YtDlpAlert } from "./YtDlpAlert.jsx";
-import { MenuBar, Sidebar, Toolbar } from "./chrome.jsx";
+import { ChromeBusyDialog, MenuBar, Sidebar, Toolbar } from "./chrome.jsx";
 import { bindCommands } from "./commands.js";
 import { buildMenu, ContextMenu, selectionLines, writeClipboard } from "./ContextMenu.jsx";
 import { matchesQuery } from "./format.js";
@@ -15,7 +15,7 @@ import { ReaderPane } from "./ReaderPane.jsx";
 import { itemGridRows, itemsEmptyText, runGridRows, sourceGridRows } from "./rows.jsx";
 import { createSelection, sameIds } from "./selection.js";
 import { AddSheet } from "./AddSheet.jsx";
-import { AboutSheet, ConfirmSheet, EditSheet, Settings } from "./Sheets.jsx";
+import { AboutSheet, ConfirmSheet, EditSheet, ResetSheet, Settings } from "./Sheets.jsx";
 import { SourcesPane } from "./SourcesPane.jsx";
 import { Sprite } from "./sprite.jsx";
 import { useCloud } from "./Words.jsx";
@@ -48,6 +48,7 @@ export function App() {
   const [editVersion, setEditVersion] = useState(0);
   const editRow = useRef(null);
   const [chromeOpen, setChromeOpen] = useState(false);
+  const [chromeHold, setChromeHold] = useState(false);
   const [chromeDetail, setChromeDetail] = useState("");
   const [ytDlpOpen, setYtDlpOpen] = useState(false);
   const [ytDlpDetail, setYtDlpDetail] = useState("");
@@ -264,7 +265,7 @@ export function App() {
 
   const { act, openEdit, removeSelection, doAction, saveSchedule, removeSchedule } = bindCommands({
     view, library, reload, showView,
-    setMenu, setContext, setSheet, setBanner, setChromeOpen, setYtDlpOpen, setEditVersion, setConfirm,
+    setMenu, setContext, setSheet, setBanner, setChromeOpen, setChromeHold, setYtDlpOpen, setEditVersion, setConfirm,
     editRow, confirmAction, liveSchedules, liveRuns, liveItems,
   });
 
@@ -345,6 +346,11 @@ export function App() {
       const typing = event.target.closest("input, select, textarea");
       if (chromeOpen) {
         if (event.key === "Escape") setChromeOpen(false);
+        event.preventDefault();
+        return;
+      }
+      if (chromeHold) {
+        if (event.key === "Escape") setChromeHold(false);
         event.preventDefault();
         return;
       }
@@ -456,7 +462,6 @@ export function App() {
   const removeOn = (inSources && sourcesOn) || (inCaptures && (selectedRuns.length > 0 || selectedItems.length > 0)) || (view === "reader" && readerIds.length > 0);
   const activeRun = cancelRuns.length > 0;
   const filesOn = inSources ? pickedSchedules.some((row) => row.schedule.downloadLocation) : pickedFileItems.length > 0;
-  const signing = !!(library?.signingIn || library?.browserBusy);
   const sourceRows = sourceGridRows(schedules, view, filter, query, scheduleIds, sourceVisible);
   const folders = new Map(schedules.map((row) => [row.schedule.id, row.schedule.downloadLocation]));
   const runRows = runGridRows(runs, view, filter, query, runIds, runVisible, folders);
@@ -478,9 +483,9 @@ export function App() {
   return (
     <>
       <Sprite />
-      <MenuBar menu={menu} setMenu={setMenu} doAction={doAction} showView={showView} library={library} runnerOn={runnerOn} editOn={editOn} filesOn={filesOn} removeOn={removeOn} sourcesOn={sourcesOn} activeRun={activeRun} signing={signing} />
+      <MenuBar menu={menu} setMenu={setMenu} doAction={doAction} showView={showView} library={library} runnerOn={runnerOn} editOn={editOn} filesOn={filesOn} removeOn={removeOn} sourcesOn={sourcesOn} activeRun={activeRun} />
       <div className="app" onMouseDown={() => { if (menu) setMenu(""); }}>
-        <Toolbar query={query} setQuery={setQuery} doAction={doAction} runnerOn={runnerOn} sourcesOn={sourcesOn} activeRun={activeRun} editOn={editOn} filesOn={filesOn} removeOn={removeOn} signing={signing} />
+        <Toolbar query={query} setQuery={setQuery} doAction={doAction} runnerOn={runnerOn} sourcesOn={sourcesOn} activeRun={activeRun} editOn={editOn} filesOn={filesOn} removeOn={removeOn} />
         <p className="banner" role="alert" hidden={!banner}>{banner}</p>
         <div className="workspace">
           <Sidebar view={view} filter={filter} counts={counts} showView={showView} />
@@ -515,7 +520,7 @@ export function App() {
             />
             <WordsPane view={view} timeline={timeline} query={query} focus={focus} setFocus={setFocus} hideCommon={hideCommon} hideURL={hideURL} toggleCommon={toggleCommon} toggleURL={toggleURL} />
             <section className={view === "settings" ? "pane is-on" : "pane"}>
-              {library ? <Settings library={library} onInstall={() => doAction("chrome-install")} onYtDlp={() => doAction("ytdlp")} onSave={(body) => act(() => send("POST", "/api/settings", body))} /> : null}
+              {library ? <Settings library={library} onInstall={() => doAction("chrome-install")} onYtDlp={() => doAction("ytdlp")} onReset={() => doAction("reset")} onSave={(body) => act(() => send("POST", "/api/settings", body))} /> : null}
             </section>
           </main>
         </div>
@@ -534,6 +539,21 @@ export function App() {
           <AddSheet open={sheet === "add"} folder={library?.defaultFolder || ""} ytDlpReady={!!library?.ytDlpPath} onYtDlpInstalled={reload} onClose={() => setSheet("")} onSubmit={(body) => act(() => send("POST", "/api/sources", body)).then(() => setSheet(""), () => {})} />
           <EditSheet open={sheet === "edit"} row={editing} onClose={() => setSheet("")} onSave={saveSchedule} onRemove={() => removeSchedule(editing?.id)} />
           <AboutSheet open={sheet === "about"} version={library?.version || ""} onClose={() => setSheet("")} />
+          <ResetSheet
+            open={sheet === "reset"}
+            onClose={() => setSheet("")}
+            onYes={() => {
+              setSheet("");
+              act(() => send("POST", "/api/reset", {})).then(() => {
+                try {
+                  for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith("marchive-")) localStorage.removeItem(key);
+                  }
+                } catch { /* The library is already empty. */ }
+                window.location.reload();
+              }, () => {});
+            }}
+          />
           <ConfirmSheet
             open={sheet === "confirm"}
             text={confirm}
@@ -547,6 +567,7 @@ export function App() {
           />
         </div>
       </div>
+      <ChromeBusyDialog open={chromeHold} capturing={!!library?.browserBusy && !library?.signingIn} onClose={() => setChromeHold(false)} />
       <ChromeAlert
         open={chromeOpen}
         onClose={() => {

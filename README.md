@@ -2,7 +2,7 @@
 
 Marchive keeps a local copy of a webpage, the new articles on a news page, a podcast feed, the text of a page, posts from X, new Hacker News stories, search results from Google and DuckDuckGo, or a YouTube video. One Go binary runs the scheduler, the capture jobs, and the UI.
 
-Version 0.2.5.
+Version 0.2.6.
 
 ## Contents
 
@@ -112,6 +112,7 @@ Settings are saved in the database.
 - **UI port.** Random picks a free localhost port each time Marchive starts. A fixed port, from 1 to 65535, is used the next time it starts. The page shows the port this session is using. Install Marchive from the browser after choosing a fixed port, so the installed app keeps opening the same address.
 - **Open on login.** Starts Marchive when you sign in.
 - **Restart on crash.** That same service starts Marchive again if it crashes.
+- **Start fresh.** Stops the runner, deletes captured files, and erases Marchive's data on this computer. Sources, captures, the Chrome profile, and yt-dlp are removed. The app starts empty. A confirmation is required.
 
 Login and crash recovery use one per-user service:
 
@@ -129,7 +130,7 @@ Webpage, article, text, X, Hacker News screenshot, and search captures render th
 
 If Chrome is missing, the UI can download the current stable release and show the install progress.
 
-**Sign in** opens the Marchive profile stored in the app data folder. Chrome shows that profile under the name Marchive. Sign in to sites you already subscribe to, then quit Chrome. Later captures reuse that profile. Marchive stores the page Chrome can already open. It does not try to defeat a paywall.
+**Sign in** and **Open Chrome** use the Marchive profile stored in the app data folder. Chrome shows that profile under the name Marchive. Sign in to sites you already subscribe to, or install an extension such as an ad blocker, then quit Chrome. Later captures reuse that profile, including its extensions. Marchive stores the page Chrome can already open. It does not try to defeat a paywall.
 
 ## Data
 
@@ -164,6 +165,7 @@ That folder holds `marchive.db`, the Chrome profile, the lock, the current port,
 ./marchive runs list
 ./marchive runs cancel 4
 ./marchive browser login
+./marchive browser open
 ```
 
 `marchive --version` prints the version baked into the binary.

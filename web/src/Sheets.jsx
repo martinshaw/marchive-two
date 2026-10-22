@@ -171,7 +171,24 @@ export function ConfirmSheet({ open, text, onClose, onYes }) {
   );
 }
 
-export function Settings({ library, onSave, onInstall, onYtDlp }) {
+export function ResetSheet({ open, onClose, onYes }) {
+  if (!open) return null;
+  return (
+    <form className="sheet confirm" onSubmit={(event) => event.preventDefault()}>
+      <header className="sheet-head"><h2>Start fresh?</h2></header>
+      <div className="sheet-body prose">
+        <p>This stops the runner, deletes every captured file, and erases Marchive's app data. The Chrome profile, yt-dlp, sources, and captures are removed. This cannot be undone.</p>
+      </div>
+      <footer className="sheet-foot">
+        <span className="sheet-spacer" />
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="button" className="push danger-push" onClick={onYes}>Start fresh</button>
+      </footer>
+    </form>
+  );
+}
+
+export function Settings({ library, onSave, onInstall, onYtDlp, onReset }) {
   const [form, setForm] = useState(null);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
@@ -298,14 +315,14 @@ export function Settings({ library, onSave, onInstall, onYtDlp }) {
       <h2>Chrome</h2>
       <div className="pref-group prose">
         {library.chromePath ? (
-          <p>Chrome is available. Sign in opens the Marchive profile stored with this app, then quit Chrome. Captures keep what that window can already open.</p>
+          <p>Chrome is available. Sign in and Open Chrome use the Marchive profile stored with this app. Install an ad blocker or sign in to a site, then quit Chrome. Later captures use that profile, including its extensions.</p>
         ) : (
           <>
             <p>{library.chromeError}</p>
             <p><button type="button" className="push" onClick={onInstall}>Install Google Chrome</button></p>
           </>
         )}
-        {library.signingIn ? <p>Chrome is open on the Marchive profile. Sign in, then quit Chrome.</p> : null}
+        {library.signingIn ? <p>Chrome is open on the Marchive profile. Make your changes, then quit Chrome.</p> : null}
         {library.browserBusy && !library.signingIn ? <p>Chrome is capturing a page.</p> : null}
       </div>
       <h2>yt-dlp</h2>
@@ -316,6 +333,11 @@ export function Settings({ library, onSave, onInstall, onYtDlp }) {
           <p>YouTube video, audio, subtitles, and comments use yt-dlp. Marchive downloads the current release into its data folder and can replace it later.</p>
         )}
         <p><button type="button" className="push" onClick={onYtDlp}>{library.ytDlpPath ? "Update yt-dlp" : "Install yt-dlp"}</button></p>
+      </div>
+      <h2>Start over</h2>
+      <div className="pref-group prose">
+        <p>Stop the runner, delete captured files, and erase Marchive's data on this computer. Sources, captures, the Chrome profile, and yt-dlp are removed. Marchive starts empty.</p>
+        <p><button type="button" className="danger-push" onClick={onReset}>Start fresh</button></p>
       </div>
     </div>
   );

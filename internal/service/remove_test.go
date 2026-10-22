@@ -104,6 +104,96 @@ func TestDeleteCanKeepOrRemoveItemFiles(t *testing.T) {
 	}
 }
 
+func TestResetErasesLibraryFilesAndAppData(t *testing.T) {
+	archive := t.TempDir()
+	outside := t.TempDir()
+	data := t.TempDir()
+	st, err := store.Open(filepath.Join(data, "marchive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	svc := New(st, nil, nil)
+	svc.DataDir = data
+	enabled := true
+	sourceID, scheduleID, err := svc.CreateSource(SourceInput{
+		URL:              "https://example.com/news",
+		Provider:         "article_index",
+		IntervalSeconds:  3600,
+		DownloadLocation: archive,
+		MaxNew:           5,
+		Enabled:          &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateRun(scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := writeItemDir(t, filepath.Join(archive, "source"), "story")
+	insertItem(t, st, sourceID, run.ID, "story", item)
+	kept := writeItemDir(t, outside, "kept")
+	if err := os.MkdirAll(filepath.Join(data, "chrome-profile"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "chrome-profile", "Preferences"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(data, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "bin", "yt-dlp"), []byte("bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "marchive.log"), []byte("log"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "port"), []byte("7777"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetListenPort(7777); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := st.ListSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 0 {
+		t.Fatalf("sources = %d", len(sources))
+	}
+	port, err := st.ListenPort()
+	if err != nil || port != 0 {
+		t.Fatalf("port = %d %v", port, err)
+	}
+	if _, err := os.Stat(item); !os.IsNotExist(err) {
+		t.Fatalf("captured folder still present: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(archive, "source")); !os.IsNotExist(err) {
+		t.Fatalf("empty source folder still present: %v", err)
+	}
+	if _, err := os.Stat(archive); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatal("folder outside the archive was removed")
+	}
+	for _, path := range []string{filepath.Join(data, "chrome-profile"), filepath.Join(data, "bin"), filepath.Join(data, "marchive.log")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s still present: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(data, "port")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(data, "marchive.db")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeItemDir(t *testing.T, root, name string) string {
 	t.Helper()
 	dir := filepath.Join(root, name)
