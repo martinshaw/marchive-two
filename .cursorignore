@@ -1,0 +1,29 @@
+# Agent must not open these. They are also left out of the search index.
+
+# Dependencies
+vendor/
+web/node_modules/
+**/node_modules/
+
+# Generated assets
+internal/httpapi/ui/dist/
+dist/
+build/
+coverage/
+web/.vite/
+marchive
+marchive.exe
+
+# Databases and migration dumps
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.dump
+*.sql.gz
+dumps/
+**/dumps/
+
+# Local noise
+*.log
+.DS_Store
